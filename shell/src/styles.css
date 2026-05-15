@@ -1,0 +1,130 @@
+:root {
+  --bg: #0f1115;
+  --panel: #161922;
+  --panel-2: #1c2030;
+  --fg: #e6e9ef;
+  --fg-dim: #8b93a7;
+  --accent: #7c9cff;
+  --warn: #ffb86b;
+  --err: #ff7a7a;
+  --ok: #7ee787;
+  --radius: 8px;
+  --gap: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid #232735;
+}
+h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.meta {
+  font-size: 12px;
+  color: var(--fg-dim);
+}
+
+main {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: var(--gap);
+  padding: var(--gap);
+  height: calc(100% - 51px);
+}
+
+textarea {
+  width: 100%;
+  height: 100%;
+  resize: none;
+  padding: 16px;
+  font: 14px/1.6 ui-monospace, "SF Mono", Menlo, monospace;
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid #232735;
+  border-radius: var(--radius);
+  outline: none;
+}
+textarea:focus {
+  border-color: var(--accent);
+}
+
+aside {
+  background: var(--panel);
+  border: 1px solid #232735;
+  border-radius: var(--radius);
+  padding: 10px;
+  overflow-y: auto;
+}
+
+.empty {
+  color: var(--fg-dim);
+  text-align: center;
+  padding: 24px 8px;
+  font-size: 13px;
+}
+
+.lint {
+  background: var(--panel-2);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-left: 3px solid var(--warn);
+}
+.lint .msg {
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+.lint .kind {
+  font-size: 11px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.lint .span {
+  font-family: ui-monospace, "SF Mono", monospace;
+  font-size: 12px;
+  color: var(--fg-dim);
+  background: #0c0e14;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: 6px;
+}
+.suggs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.sugg {
+  cursor: pointer;
+  background: #2a3046;
+  border: none;
+  color: var(--fg);
+  padding: 3px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  font-family: inherit;
+}
+.sugg:hover {
+  background: var(--accent);
+  color: #0f1115;
+}

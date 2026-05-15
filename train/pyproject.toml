@@ -1,0 +1,28 @@
+[project]
+name = "quill-train"
+version = "0.1.0"
+description = "Fine-tune Gemma 3 270M on CoEdIT for local grammar correction"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "torch>=2.5",
+    "transformers>=4.50",
+    "datasets>=3.0",
+    "peft>=0.13",
+    "accelerate>=1.0",
+    "trl>=0.12",
+    "bitsandbytes>=0.45; sys_platform == 'linux'",
+    "huggingface-hub>=0.26",
+    "evaluate>=0.4",
+    "sacrebleu>=2.4",
+    "numpy>=2.0",
+    "pyyaml>=6.0",
+]
+
+[tool.uv]
+package = false
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7",
+    "ipykernel>=6.29",
+]

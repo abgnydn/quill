@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Quill</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>quill</h1>
+      <span class="meta" id="status">ready</span>
+    </header>
+    <main>
+      <textarea
+        id="editor"
+        placeholder="Type or paste text. Suggestions appear on the right."
+        spellcheck="false"
+        autofocus
+      >This is an test of the Harper grammer checker. I has a apple.</textarea>
+      <aside id="suggestions">
+        <div class="empty">no suggestions yet</div>
+      </aside>
+    </main>
+    <script src="main.js"></script>
+  </body>
+</html>

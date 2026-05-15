@@ -1,0 +1,43 @@
+model:
+  name: google/gemma-3-270m-it
+  dtype: bfloat16
+  attn_implementation: eager
+
+dataset:
+  name: grammarly/coedit
+  split_train: train
+  split_eval: validation
+  max_train_samples: null
+  max_eval_samples: 1000
+
+tokenizer:
+  max_length: 512
+  truncation: true
+
+lora:
+  r: 16
+  alpha: 32
+  dropout: 0.05
+  target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
+  bias: none
+  task_type: CAUSAL_LM
+
+train:
+  output_dir: ./checkpoints/gemma3-270m-coedit-lora
+  num_train_epochs: 3
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 16
+  gradient_accumulation_steps: 2
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  weight_decay: 0.0
+  bf16: true
+  logging_steps: 25
+  eval_strategy: steps
+  eval_steps: 200
+  save_strategy: steps
+  save_steps: 200
+  save_total_limit: 3
+  report_to: none
+  seed: 1337
