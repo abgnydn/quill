@@ -1,24 +1,23 @@
-"""LoRA fine-tune Gemma 3 270M on CoEdIT.
+"""LoRA fine-tune Gemma 3 270M on CoEdIT via Unsloth.
 
-Run:
-    huggingface-cli login   # accept Gemma license once
+Run (Colab T4 free tier or any CUDA GPU):
+    huggingface-cli login   # accept the Gemma license once
     uv run python scripts/train.py --config configs/lora.yaml
 
-Hardware target: a single 24 GB GPU comfortably handles this; an M2 Pro with MPS
-will work but be slower. For Colab / Modal use an L4 or A10G."""
+Wall-clock on free Colab T4 for full CoEdIT (69k rows, 3 epochs): ~8 minutes.
+On L4 / A10G: 2-3 minutes. On H100: <1 minute.
+
+Mac users: this script requires Unsloth (Triton-based) which has no macOS support
+yet. Run on Colab. `scripts/prep_coedit.py` and `scripts/eval.py` work locally.
+"""
 
 from __future__ import annotations
 
 import argparse
+import sys
 
 import yaml
 from datasets import load_dataset
-from peft import LoraConfig, get_peft_model
-from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
-)
-from trl import SFTConfig, SFTTrainer
 
 
 GEMMA_CHAT_TEMPLATE = (
@@ -42,39 +41,61 @@ def main() -> None:
     args = ap.parse_args()
     cfg = load_cfg(args.config)
 
-    tok = AutoTokenizer.from_pretrained(cfg["model"]["name"])
-    if tok.pad_token is None:
-        tok.pad_token = tok.eos_token
+    # Lazy imports — Unsloth has no macOS support, so importing at module-top
+    # would break `python -c "import scripts.train"` on Mac. Keep them inside main.
+    try:
+        from unsloth import FastLanguageModel, is_bfloat16_supported
+    except ImportError as e:
+        print(
+            "ERROR: unsloth not installed. On macOS, unsloth does not support "
+            "MPS yet — run this script on Colab T4 / Linux CUDA instead.\n"
+            f"Underlying error: {e}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
-    model = AutoModelForCausalLM.from_pretrained(
-        cfg["model"]["name"],
-        torch_dtype=cfg["model"]["dtype"],
-        attn_implementation=cfg["model"].get("attn_implementation", "eager"),
+    from trl import SFTConfig, SFTTrainer
+
+    model, tokenizer = FastLanguageModel.from_pretrained(
+        model_name=cfg["model"]["name"],
+        max_seq_length=cfg["model"]["max_seq_length"],
+        dtype=cfg["model"]["dtype"],
+        load_in_4bit=cfg["model"]["load_in_4bit"],
     )
 
-    peft_cfg = LoraConfig(
+    model = FastLanguageModel.get_peft_model(
+        model,
         r=cfg["lora"]["r"],
         lora_alpha=cfg["lora"]["alpha"],
         lora_dropout=cfg["lora"]["dropout"],
         bias=cfg["lora"]["bias"],
-        task_type=cfg["lora"]["task_type"],
         target_modules=cfg["lora"]["target_modules"],
+        use_gradient_checkpointing="unsloth",
+        random_state=cfg["train"]["seed"],
+        use_rslora=False,
     )
-    model = get_peft_model(model, peft_cfg)
-    model.print_trainable_parameters()
 
     ds = load_dataset(cfg["dataset"]["name"])
-    train_ds = ds[cfg["dataset"]["split_train"]].map(format_coedit, remove_columns=ds[cfg["dataset"]["split_train"]].column_names)
+    train_ds = ds[cfg["dataset"]["split_train"]].map(
+        format_coedit, remove_columns=ds[cfg["dataset"]["split_train"]].column_names
+    )
     eval_split = cfg["dataset"].get("split_eval")
     eval_ds = None
     if eval_split and eval_split in ds:
-        eval_ds = ds[eval_split].map(format_coedit, remove_columns=ds[eval_split].column_names)
+        eval_ds = ds[eval_split].map(
+            format_coedit, remove_columns=ds[eval_split].column_names
+        )
         if cfg["dataset"].get("max_eval_samples"):
-            eval_ds = eval_ds.select(range(min(cfg["dataset"]["max_eval_samples"], len(eval_ds))))
+            eval_ds = eval_ds.select(
+                range(min(cfg["dataset"]["max_eval_samples"], len(eval_ds)))
+            )
 
     if cfg["dataset"].get("max_train_samples"):
-        train_ds = train_ds.select(range(min(cfg["dataset"]["max_train_samples"], len(train_ds))))
+        train_ds = train_ds.select(
+            range(min(cfg["dataset"]["max_train_samples"], len(train_ds)))
+        )
 
+    use_bf16 = is_bfloat16_supported()
     sft_cfg = SFTConfig(
         output_dir=cfg["train"]["output_dir"],
         num_train_epochs=cfg["train"]["num_train_epochs"],
@@ -85,7 +106,8 @@ def main() -> None:
         warmup_ratio=cfg["train"]["warmup_ratio"],
         lr_scheduler_type=cfg["train"]["lr_scheduler_type"],
         weight_decay=cfg["train"]["weight_decay"],
-        bf16=cfg["train"]["bf16"],
+        bf16=use_bf16,
+        fp16=not use_bf16,
         logging_steps=cfg["train"]["logging_steps"],
         eval_strategy=cfg["train"]["eval_strategy"] if eval_ds else "no",
         eval_steps=cfg["train"]["eval_steps"],
@@ -94,8 +116,9 @@ def main() -> None:
         save_total_limit=cfg["train"]["save_total_limit"],
         report_to=cfg["train"]["report_to"],
         seed=cfg["train"]["seed"],
-        max_length=cfg["tokenizer"]["max_length"],
+        max_length=cfg["model"]["max_seq_length"],
         packing=False,
+        optim="adamw_8bit",
     )
 
     trainer = SFTTrainer(
@@ -103,11 +126,11 @@ def main() -> None:
         args=sft_cfg,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        processing_class=tok,
+        processing_class=tokenizer,
     )
     trainer.train()
     trainer.save_model(cfg["train"]["output_dir"])
-    tok.save_pretrained(cfg["train"]["output_dir"])
+    tokenizer.save_pretrained(cfg["train"]["output_dir"])
     print(f"saved LoRA adapter to {cfg['train']['output_dir']}")
 
 
