@@ -10,14 +10,31 @@
     <header>
       <h1>quill</h1>
       <span class="meta" id="status">ready</span>
+      <span class="caps" id="caps"></span>
     </header>
     <main>
-      <textarea
-        id="editor"
-        placeholder="Type or paste text. Suggestions appear on the right."
-        spellcheck="false"
-        autofocus
-      >This is an test of the Harper grammer checker. I has a apple.</textarea>
+      <section class="editor-pane">
+        <textarea
+          id="editor"
+          placeholder="Type or paste text. Suggestions appear on the right."
+          spellcheck="false"
+          autofocus
+        >This is an test of the Harper grammer checker. I has a apple.</textarea>
+        <div class="actions">
+          <button id="rewrite-btn" disabled title="Run the local LLM rewriter on the current text">
+            ✎ Rewrite
+          </button>
+          <span class="hint" id="rewrite-hint"></span>
+        </div>
+        <div class="rewrite-output hidden" id="rewrite-output">
+          <div class="rewrite-label">rewrite</div>
+          <div class="rewrite-text" id="rewrite-text"></div>
+          <div class="rewrite-actions">
+            <button id="rewrite-apply">Apply</button>
+            <button id="rewrite-dismiss">Dismiss</button>
+          </div>
+        </div>
+      </section>
       <aside id="suggestions">
         <div class="empty">no suggestions yet</div>
       </aside>

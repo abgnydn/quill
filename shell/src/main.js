@@ -3,6 +3,13 @@ const { invoke } = window.__TAURI__.core;
 const editor = document.getElementById("editor");
 const panel = document.getElementById("suggestions");
 const status = document.getElementById("status");
+const caps = document.getElementById("caps");
+const rewriteBtn = document.getElementById("rewrite-btn");
+const rewriteHint = document.getElementById("rewrite-hint");
+const rewriteOutput = document.getElementById("rewrite-output");
+const rewriteText = document.getElementById("rewrite-text");
+const rewriteApply = document.getElementById("rewrite-apply");
+const rewriteDismiss = document.getElementById("rewrite-dismiss");
 
 let debounceTimer = null;
 let inflight = false;
@@ -13,6 +20,26 @@ function debounce(fn, ms) {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => fn(...args), ms);
   };
+}
+
+async function probeCapabilities() {
+  try {
+    const c = await invoke("capabilities");
+    let label = "harper-only";
+    if (c.llm_built && c.model_loaded) {
+      label = "harper + llm";
+      rewriteBtn.disabled = false;
+      rewriteHint.textContent = "";
+    } else if (c.llm_built && !c.model_loaded) {
+      label = "harper + llm (no model)";
+      rewriteHint.textContent = "set QUILL_MODEL to your .gguf and relaunch";
+    } else {
+      rewriteHint.textContent = "rebuild with --features llm to enable";
+    }
+    caps.textContent = label;
+  } catch (e) {
+    caps.textContent = `caps error: ${e}`;
+  }
 }
 
 async function runCheck() {
@@ -96,5 +123,53 @@ function escapeHtml(s) {
     .replaceAll('"', "&quot;");
 }
 
+function selectedOrAll() {
+  const start = editor.selectionStart;
+  const end = editor.selectionEnd;
+  if (end > start) {
+    return { text: editor.value.slice(start, end), start, end };
+  }
+  return { text: editor.value, start: 0, end: editor.value.length };
+}
+
+async function runRewrite() {
+  const { text } = selectedOrAll();
+  if (!text.trim()) return;
+  rewriteBtn.disabled = true;
+  rewriteOutput.classList.remove("hidden");
+  rewriteText.textContent = "";
+  rewriteText.classList.add("loading");
+  const t0 = performance.now();
+  try {
+    const out = await invoke("rewrite", { text, instruction: null });
+    const dt = (performance.now() - t0).toFixed(0);
+    rewriteText.classList.remove("loading");
+    rewriteText.textContent = out;
+    rewriteHint.textContent = `${dt} ms`;
+  } catch (err) {
+    rewriteText.classList.remove("loading");
+    rewriteText.textContent = `error: ${err}`;
+    rewriteHint.textContent = "";
+  } finally {
+    rewriteBtn.disabled = false;
+  }
+}
+
+rewriteBtn.addEventListener("click", runRewrite);
+rewriteApply.addEventListener("click", () => {
+  const out = rewriteText.textContent;
+  if (!out) return;
+  const sel = selectedOrAll();
+  editor.value =
+    editor.value.slice(0, sel.start) + out + editor.value.slice(sel.end);
+  rewriteOutput.classList.add("hidden");
+  runCheck();
+});
+rewriteDismiss.addEventListener("click", () => {
+  rewriteOutput.classList.add("hidden");
+});
+
 editor.addEventListener("input", debounce(runCheck, 250));
+
+probeCapabilities();
 runCheck();

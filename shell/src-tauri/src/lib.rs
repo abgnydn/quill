@@ -7,6 +7,9 @@ use harper_core::{Dialect, Document};
 use serde::Serialize;
 use tauri::{Manager, State};
 
+#[cfg(feature = "llm")]
+pub mod inference;
+
 #[derive(Serialize)]
 pub struct WireSuggestion {
     pub kind: &'static str,
@@ -21,6 +24,12 @@ pub struct WireLint {
     pub kind: String,
     pub priority: u8,
     pub suggestions: Vec<WireSuggestion>,
+}
+
+#[derive(Serialize)]
+pub struct Capabilities {
+    pub llm_built: bool,
+    pub model_loaded: bool,
 }
 
 pub struct CheckerState {
@@ -40,6 +49,54 @@ impl CheckerState {
 impl Default for CheckerState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(feature = "llm")]
+pub struct RewriteState {
+    engine: Mutex<Option<inference::RewriteEngine>>,
+}
+
+#[cfg(feature = "llm")]
+impl RewriteState {
+    pub fn new() -> Self {
+        let engine = match std::env::var("QUILL_MODEL") {
+            Ok(path) => match inference::RewriteEngine::load(&path) {
+                Ok(e) => {
+                    eprintln!("[quill] loaded model from {path}");
+                    Some(e)
+                }
+                Err(err) => {
+                    eprintln!("[quill] failed to load QUILL_MODEL={path}: {err:#}");
+                    None
+                }
+            },
+            Err(_) => {
+                eprintln!("[quill] QUILL_MODEL unset; rewrite disabled until set");
+                None
+            }
+        };
+        Self {
+            engine: Mutex::new(engine),
+        }
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        self.engine.lock().map(|g| g.is_some()).unwrap_or(false)
+    }
+}
+
+#[cfg(not(feature = "llm"))]
+pub struct RewriteState;
+
+#[cfg(not(feature = "llm"))]
+impl RewriteState {
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn is_loaded(&self) -> bool {
+        false
     }
 }
 
@@ -88,14 +145,51 @@ fn check(text: &str, state: State<'_, CheckerState>) -> Vec<WireLint> {
     check_text_with(&mut linter, text)
 }
 
+#[tauri::command]
+fn capabilities(state: State<'_, RewriteState>) -> Capabilities {
+    Capabilities {
+        llm_built: cfg!(feature = "llm"),
+        model_loaded: state.is_loaded(),
+    }
+}
+
+#[tauri::command]
+fn rewrite(
+    text: &str,
+    instruction: Option<String>,
+    state: State<'_, RewriteState>,
+) -> Result<String, String> {
+    #[cfg(feature = "llm")]
+    {
+        let lock = state
+            .engine
+            .lock()
+            .map_err(|e| format!("engine mutex poisoned: {e}"))?;
+        match &*lock {
+            Some(engine) => engine
+                .rewrite(text, instruction.as_deref())
+                .map_err(|e| format!("{e:#}")),
+            None => Err(
+                "no model loaded — set QUILL_MODEL=<path-to.gguf> before launching".into(),
+            ),
+        }
+    }
+    #[cfg(not(feature = "llm"))]
+    {
+        let _ = (text, instruction, state);
+        Err("rewrite not available — build with --features llm".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             app.manage(CheckerState::new());
+            app.manage(RewriteState::new());
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![check])
+        .invoke_handler(tauri::generate_handler![check, capabilities, rewrite])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -122,4 +216,3 @@ mod tests {
         assert!(lints.is_empty(), "clean text should produce no lints");
     }
 }
-
