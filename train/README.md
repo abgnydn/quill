@@ -14,7 +14,16 @@ Train the local-first grammar/editing model for [Quill](../CLAUDE.md). LoRA on t
 
 `scripts/prep_coedit.py` and `scripts/eval.py` work on Mac. Only `train.py` and `export_gguf.py` need a CUDA box.
 
-## Pipeline
+## Fast path: VS Code + Google Colab extension
+
+The repo ships `train/colab.ipynb` as a self-contained notebook. Two clicks:
+
+1. Open `~/quill/train/colab.ipynb` in VS Code.
+2. With the **Google Colab** extension active, click "Connect" → pick a **T4** runtime → **Run All**.
+
+The notebook does deps install, HF login, model load, training, sanity-check, GGUF export, and Drive persistence in order. ~8 min wall-clock. Artifacts end up in `/content/drive/MyDrive/quill/`.
+
+## Pipeline (CLI path, equivalent)
 
 ### 1. Inspect the data (any machine)
 
