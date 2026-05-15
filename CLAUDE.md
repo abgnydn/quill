@@ -54,10 +54,14 @@ quill/
 - ✅ `~/quill` skeleton + git init + .gitignore
 - ✅ Tauri 2.11 shell scaffolded with `harper-core 2.0` wired through a `check` IPC command
 - ✅ Vanilla JS frontend: textarea, debounced check, suggestion buttons (apply replace/insert/remove)
-- ✅ `cargo check` passes on `shell/src-tauri/`
-- ✅ `train/` scaffolded: pyproject.toml, lora.yaml config, prep / train / eval scripts
-- ⏳ Nothing run yet: no `cargo tauri dev`, no `uv sync`, no training kicked off
-- ⏳ No tauri CLI installed yet (`cargo install tauri-cli --version "^2"` to launch)
+- ✅ Tauri CLI 2.11.1 installed; `cargo tauri dev` launched cleanly, window opened, 4 lints on seed text
+- ✅ Perf hoist: `LintGroup` built once in `setup()`, shared via `Mutex` (was rebuilding per-call → first-call cost 3349 ms; expected steady-state 10-50 ms, **not yet externally measured**)
+- ✅ Train env validated: `uv sync` installs cleanly (py 3.11.14, torch 2.12, transformers 5.8.1, trl 1.4.0, datasets 4.8.5, peft 0.19.1)
+- ✅ CoEdIT dataset confirmed: 69,071 train + 1,712 val, 6 task types (gec, neutralize, simplification, paraphrase, coherence, clarity)
+- ✅ `train.py` updated for TRL 1.4 API renames (`max_seq_length` → `max_length`, `tokenizer=` → `processing_class=`); SFTConfig dry-build succeeds from `configs/lora.yaml`
+- ⏳ No training kicked off — needs `huggingface-cli login` + accepting Gemma license + a GPU
+- ⏳ No candle inference path yet
+- ⏳ Brain writeup: `~/brain/projects/quill.md` + `~/brain/research-vault/experiments/E38-quill-shell-bootstrap.md` shipped
 
 ## 🎯 Resume here (on "continue")
 

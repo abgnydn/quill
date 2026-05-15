@@ -94,7 +94,7 @@ def main() -> None:
         save_total_limit=cfg["train"]["save_total_limit"],
         report_to=cfg["train"]["report_to"],
         seed=cfg["train"]["seed"],
-        max_seq_length=cfg["tokenizer"]["max_length"],
+        max_length=cfg["tokenizer"]["max_length"],
         packing=False,
     )
 
@@ -103,7 +103,7 @@ def main() -> None:
         args=sft_cfg,
         train_dataset=train_ds,
         eval_dataset=eval_ds,
-        tokenizer=tok,
+        processing_class=tok,
     )
     trainer.train()
     trainer.save_model(cfg["train"]["output_dir"])
