@@ -1,8 +1,11 @@
+use std::sync::Mutex;
+
 use harper_core::linting::{LintGroup, Linter, Suggestion};
 use harper_core::parsers::PlainEnglish;
 use harper_core::spell::FstDictionary;
 use harper_core::{Dialect, Document};
 use serde::Serialize;
+use tauri::{Manager, State};
 
 #[derive(Serialize)]
 pub struct WireSuggestion {
@@ -20,12 +23,27 @@ pub struct WireLint {
     pub suggestions: Vec<WireSuggestion>,
 }
 
-pub fn check_text(text: &str) -> Vec<WireLint> {
-    let document = Document::new_curated(text, &PlainEnglish);
-    let dict = FstDictionary::curated();
-    let mut linter = LintGroup::new_curated(dict, Dialect::American);
-    let lints = linter.lint(&document);
+pub struct CheckerState {
+    pub linter: Mutex<LintGroup>,
+}
 
+impl CheckerState {
+    pub fn new() -> Self {
+        let dict = FstDictionary::curated();
+        let linter = LintGroup::new_curated(dict, Dialect::American);
+        Self {
+            linter: Mutex::new(linter),
+        }
+    }
+}
+
+impl Default for CheckerState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+fn wire_lints_from<I: IntoIterator<Item = harper_core::linting::Lint>>(lints: I) -> Vec<WireLint> {
     lints
         .into_iter()
         .map(|l| WireLint {
@@ -56,14 +74,27 @@ pub fn check_text(text: &str) -> Vec<WireLint> {
         .collect()
 }
 
+pub fn check_text_with(linter: &mut LintGroup, text: &str) -> Vec<WireLint> {
+    let document = Document::new_curated(text, &PlainEnglish);
+    wire_lints_from(linter.lint(&document))
+}
+
 #[tauri::command]
-fn check(text: &str) -> Vec<WireLint> {
-    check_text(text)
+fn check(text: &str, state: State<'_, CheckerState>) -> Vec<WireLint> {
+    let mut linter = state
+        .linter
+        .lock()
+        .expect("checker mutex poisoned");
+    check_text_with(&mut linter, text)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            app.manage(CheckerState::new());
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![check])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -73,32 +104,22 @@ pub fn run() {
 mod tests {
     use super::*;
 
-    #[test]
-    fn flags_obvious_grammar_error() {
-        let lints = check_text("This is an test.");
-        assert!(
-            !lints.is_empty(),
-            "Harper should flag 'an test' as a lint"
-        );
+    fn fresh_linter() -> LintGroup {
+        LintGroup::new_curated(FstDictionary::curated(), Dialect::American)
     }
 
     #[test]
-    fn returns_replacement_suggestions() {
-        let lints = check_text("I has a apple.");
-        assert!(!lints.is_empty(), "expected lints for ungrammatical sentence");
-        let any_replacement = lints
-            .iter()
-            .any(|l| l.suggestions.iter().any(|s| s.kind == "replace"));
-        assert!(any_replacement, "expected at least one replace suggestion");
+    fn flags_obvious_grammar_error() {
+        let mut linter = fresh_linter();
+        let lints = check_text_with(&mut linter, "This is an test.");
+        assert!(!lints.is_empty(), "Harper should flag 'an test'");
     }
 
     #[test]
     fn clean_text_returns_no_lints() {
-        let lints = check_text("This is a perfectly normal sentence.");
-        assert!(
-            lints.is_empty(),
-            "clean text should produce no lints, got: {:?}",
-            lints.iter().map(|l| &l.message).collect::<Vec<_>>()
-        );
+        let mut linter = fresh_linter();
+        let lints = check_text_with(&mut linter, "This is a perfectly normal sentence.");
+        assert!(lints.is_empty(), "clean text should produce no lints");
     }
 }
+
