@@ -63,34 +63,37 @@ def main() -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     merged_dir = Path(args.merged_dir).resolve() if args.merged_dir else out_path.parent / "merged-16bit"
-    if merged_dir.exists():
-        shutil.rmtree(merged_dir)
-
     llama_dir = Path(args.llama_cpp_dir).expanduser().resolve()
 
     # ---- 1. Merge LoRA into base via transformers+peft ----------------------
-    t = step(f"merging LoRA from {ckpt}")
-    import torch
-    from huggingface_hub import login
-    from peft import PeftModel
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    merged_marker = merged_dir / "config.json"
+    if merged_marker.exists():
+        print(f"\n=== reusing existing merged model at {merged_dir} ===", flush=True)
+    else:
+        if merged_dir.exists():
+            shutil.rmtree(merged_dir)
+        t = step(f"merging LoRA from {ckpt}")
+        import torch
+        from huggingface_hub import login
+        from peft import PeftModel
+        from transformers import AutoModelForCausalLM, AutoTokenizer
 
-    if os.environ.get("HF_TOKEN"):
-        login(token=os.environ["HF_TOKEN"])
+        if os.environ.get("HF_TOKEN"):
+            login(token=os.environ["HF_TOKEN"])
 
-    print(f"  loading base {args.base} on CPU (fp16) …", flush=True)
-    base = AutoModelForCausalLM.from_pretrained(
-        args.base,
-        torch_dtype=torch.float16,
-        device_map="cpu",
-    )
-    tok = AutoTokenizer.from_pretrained(args.base)
-    print(f"  attaching adapter and merging …", flush=True)
-    model = PeftModel.from_pretrained(base, str(ckpt))
-    merged = model.merge_and_unload()
-    merged.save_pretrained(str(merged_dir), safe_serialization=True)
-    tok.save_pretrained(str(merged_dir))
-    print(f"  merged 16-bit HF → {merged_dir}  ({time.time() - t:.1f}s)", flush=True)
+        print(f"  loading base {args.base} on CPU (fp16) …", flush=True)
+        base = AutoModelForCausalLM.from_pretrained(
+            args.base,
+            torch_dtype=torch.float16,
+            device_map="cpu",
+        )
+        tok = AutoTokenizer.from_pretrained(args.base)
+        print(f"  attaching adapter and merging …", flush=True)
+        model = PeftModel.from_pretrained(base, str(ckpt))
+        merged = model.merge_and_unload()
+        merged.save_pretrained(str(merged_dir), safe_serialization=True)
+        tok.save_pretrained(str(merged_dir))
+        print(f"  merged 16-bit HF → {merged_dir}  ({time.time() - t:.1f}s)", flush=True)
 
     # ---- 2. Clone llama.cpp if needed ---------------------------------------
     if not llama_dir.exists():
@@ -103,10 +106,22 @@ def main() -> None:
 
     # ---- 3. Install llama.cpp Python converter deps -------------------------
     t = step("ensuring llama.cpp python deps")
-    subprocess.run(
-        [sys.executable, "-m", "pip", "install", "-q", "-r", str(llama_dir / "requirements.txt")],
-        check=True,
-    )
+    reqs = str(llama_dir / "requirements.txt")
+    uv = shutil.which("uv")
+    # Force PyPI and allow fallback across indexes — bypasses cases where the
+    # caller's uv config pins a pytorch nightly index that doesn't have the
+    # exact versions llama.cpp pins.
+    if uv:
+        subprocess.run(
+            [uv, "pip", "install", "-q",
+             "--python", sys.executable,
+             "--index-url", "https://pypi.org/simple",
+             "--index-strategy", "unsafe-best-match",
+             "-r", reqs],
+            check=True,
+        )
+    else:
+        subprocess.run([sys.executable, "-m", "pip", "install", "-q", "-r", reqs], check=True)
     print(f"  done ({time.time() - t:.1f}s)", flush=True)
 
     # ---- 4. Convert HF → GGUF f16 -------------------------------------------
