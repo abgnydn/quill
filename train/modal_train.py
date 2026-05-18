@@ -85,7 +85,9 @@ def train_and_export() -> dict:
     print(f"[quill] GPU: {torch.cuda.get_device_name(0)}")
     print(f"[quill] bf16 supported: {is_bfloat16_supported()}")
 
-    MAX_SEQ = 512
+    # CoEdIT prompts + targets fit comfortably in 256 tokens (95th percentile
+    # is around 180). Shorter = quadratically less attention compute.
+    MAX_SEQ = 256
     OUT = Path("/artifacts/gemma3-270m-coedit-lora")
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -100,7 +102,9 @@ def train_and_export() -> dict:
         model,
         r=16,
         lora_alpha=32,
-        lora_dropout=0.05,
+        # 0 keeps Unsloth's fast LoRA path. 0.05 forces a "patch everything
+        # except LoRA" mode that's ~5-10× slower on small models.
+        lora_dropout=0.0,
         bias="none",
         target_modules=[
             "q_proj", "k_proj", "v_proj", "o_proj",
@@ -126,10 +130,10 @@ def train_and_export() -> dict:
     use_bf16 = is_bfloat16_supported()
     sft_cfg = SFTConfig(
         output_dir=str(OUT),
-        num_train_epochs=2,
-        per_device_train_batch_size=16,
-        per_device_eval_batch_size=16,
-        gradient_accumulation_steps=2,
+        num_train_epochs=1,
+        per_device_train_batch_size=32,
+        per_device_eval_batch_size=32,
+        gradient_accumulation_steps=1,
         learning_rate=1e-4,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",
