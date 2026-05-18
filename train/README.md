@@ -14,14 +14,19 @@ Train the local-first grammar/editing model for [Quill](../CLAUDE.md). LoRA on t
 
 `scripts/prep_coedit.py` and `scripts/eval.py` work on Mac. Only `train.py` and `export_gguf.py` need a CUDA box.
 
-## Fast path: VS Code + Google Colab extension
+## Fast path: Modal L4 (recommended)
 
-The repo ships `train/colab.ipynb` as a self-contained notebook. Two clicks:
+After Colab T4 turned out to be a trap (fp32 fallback → 4.5 h, plus free Colab kills sessions), the canonical path is Modal:
 
-1. Open `~/quill/train/colab.ipynb` in VS Code.
-2. With the **Google Colab** extension active, click "Connect" → pick a **T4** runtime → **Run All**.
+```bash
+pip install modal
+modal token new        # one-time auth
+HF_TOKEN=hf_xxx modal run modal_train.py
+```
 
-The notebook does deps install, HF login, model load, training, sanity-check, GGUF export, and Drive persistence in order. ~8 min wall-clock. Artifacts end up in `/content/drive/MyDrive/quill/`.
+Script runs from your terminal, streams logs back, downloads `checkpoints/quill-q4_k_m.gguf` + the LoRA adapter to your Mac when done. ~15 min wall-clock, ~$0.20-0.30 (new Modal accounts get $30/mo free credit).
+
+**Why not Colab:** T4 doesn't support bf16 and Gemma 3 NaNs in fp16, so Unsloth falls back to fp32 → 4.5 h instead of 8 min. Sessions on free Colab also disconnect at unpredictable times. The notebook (`colab.ipynb`) is kept around but **don't use it unless you have Colab Pro with L4 access**.
 
 ## Pipeline (CLI path, equivalent)
 
