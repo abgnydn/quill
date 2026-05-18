@@ -35,22 +35,19 @@ APP_NAME = "quill-train"
 image = (
     modal.Image.debian_slim(python_version="3.11")
     .apt_install("git", "build-essential", "cmake")
+    # CUDA-enabled torch first — Modal mounts NVIDIA drivers at runtime, so we
+    # only need the cu124 wheels here.
     .pip_install(
         "torch==2.5.1",
-        "transformers==4.50.0",
-        "datasets==3.2.0",
-        "trl==0.12.2",
-        "peft==0.14.0",
-        "accelerate==1.2.1",
-        "bitsandbytes==0.45.0",
-        "huggingface_hub==0.27.0",
-        "sentencepiece",
-        "protobuf",
-        "xformers==0.0.28.post3",
+        extra_options="--index-url https://download.pytorch.org/whl/cu124",
     )
-    # Unsloth pinned to a version known to work with the above stack.
-    .pip_install("unsloth==2024.12.12")
-    .pip_install("unsloth_zoo==2024.12.7")
+    # Let unsloth resolve its own compatible transformers/trl/peft/accelerate/
+    # bitsandbytes/xformers — the version cross-product is brittle to pin by
+    # hand and unsloth's wheel knows what it wants.
+    .pip_install("unsloth")
+    # GGUF conversion essentials (the llama.cpp converter pulls additional
+    # deps from its own requirements.txt at runtime).
+    .pip_install("sentencepiece", "protobuf")
 )
 
 app = modal.App(APP_NAME, image=image)
