@@ -59,12 +59,13 @@ quill/
 - ✅ Train env validated: `uv sync` installs cleanly (py 3.11.14, torch 2.12, transformers 5.8.1, trl 1.4.0, datasets 4.8.5, peft 0.19.1)
 - ✅ CoEdIT dataset confirmed: 69,071 train + 1,712 val, 6 task types (gec, neutralize, simplification, paraphrase, coherence, clarity)
 - ✅ `train.py` updated for TRL 1.4 API renames (`max_seq_length` → `max_length`, `tokenizer=` → `processing_class=`); SFTConfig dry-build succeeds from `configs/lora.yaml`
-- ✅ Inference scaffold: `inference.rs` + `rewrite`/`capabilities` Tauri commands behind `llm` Cargo feature; `quill-rewrite` CLI binary at `src/bin/quill_rewrite.rs` for offline GGUF testing
-- ✅ Frontend Rewrite button + "Apply / Dismiss" UX; shows `harper + llm (no model)` in the header until `QUILL_MODEL` is set
-- ✅ Train workstream migrated to Unsloth + self-contained `train/colab.ipynb` (Colab T4, ~8 min)
-- ⏳ Training kicked off in Colab browser tab (artifacts → `/content/drive/MyDrive/quill/`)
-- ⏳ No GGUF wired into the shell yet — `cargo build --features llm` will pull llama-cpp-2 + compile llama.cpp from source (~2-5 min first time; needs cmake + C++ toolchain)
-- ⏳ Brain writeup: `~/brain/projects/quill.md` + `~/brain/research-vault/experiments/E38-quill-shell-bootstrap.md` shipped
+- ✅ Inference scaffold: `inference.rs` + `rewrite`/`capabilities` Tauri commands behind `llm` Cargo feature; `quill-rewrite` CLI binary at `src/bin/quill_rewrite.rs`
+- ✅ Frontend Rewrite button + "Apply / Dismiss" UX
+- ✅ Train: Modal L4 → 241 MB `quill-q4_k_m.gguf` at `train/checkpoints/`
+- ✅ Inference works end-to-end: CLI 0.6s cold, GUI **292 ms steady-state** on M2 Metal
+- ✅ Bundle config: GGUF in `shell/src-tauri/resources/`, tauri.conf.json `bundle.active=true`, RewriteState falls back to bundled resource if `QUILL_MODEL` unset
+- ⏳ `cargo tauri build --features llm` running → `.app` at `target/release/bundle/macos/Quill.app`
+- ⏳ Brain writeups: `~/brain/projects/quill.md` + `~/brain/research-vault/experiments/{E38,E39}-quill-*.md` shipped
 
 ## 🎯 Resume here (on "continue")
 
@@ -79,11 +80,9 @@ quill/
 
 ## Known gaps / next concrete tasks
 
-- Replace placeholder 256×256 solid-color RGBA icons with a real icon set before any ship.
-- Inference runtime decided: **llama-cpp-2** (won over candle for mature GGUF support + best CPU perf for quantized small models + future BitNet path via bitnet.cpp).
-- Once Gemma LoRA trains in Colab, pull `quill-q4_k_m.gguf` from Drive to `~/quill/train/checkpoints/`, then:
-  - Test inference: `cargo build --features llm --release --bin quill-rewrite && ./target/release/quill-rewrite --model <path> --text "I has a apple"`
-  - Test in GUI: `QUILL_MODEL=<path-to-gguf> cargo tauri dev --features llm`
+- Replace placeholder 256×256 solid-color RGBA icons with a real icon set.
+- Local-build prereq for `--features llm`: requires a fresh patch to `~/.cache/llama.cpp/conversion/base.py` (s/< vocab_size/<= vocab_size/) if you ever blow away the cache — see [[E39-quill-coedit-lora]] § "wrong turns" #7.
+- Bundle currently ships GGUF inside `.app` (~245 MB total). Future v0.2: quantization sweep (q3_k_s / q2_k_s / embedding pruning) to hit <100 MB without retraining.
 - Harper's `Span<char>` uses Unicode char offsets, which differ from JS UTF-16 offsets on non-BMP chars. Fine for English ASCII; will break on emoji/CJK. Convert in `check_text` if we ever target multilingual.
 
 ## References

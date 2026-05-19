@@ -59,20 +59,24 @@ pub struct RewriteState {
 
 #[cfg(feature = "llm")]
 impl RewriteState {
-    pub fn new() -> Self {
-        let engine = match std::env::var("QUILL_MODEL") {
-            Ok(path) => match inference::RewriteEngine::load(&path) {
+    pub fn from_path(path: Option<std::path::PathBuf>) -> Self {
+        let engine = match path {
+            Some(p) if p.exists() => match inference::RewriteEngine::load(&p) {
                 Ok(e) => {
-                    eprintln!("[quill] loaded model from {path}");
+                    eprintln!("[quill] loaded model from {}", p.display());
                     Some(e)
                 }
                 Err(err) => {
-                    eprintln!("[quill] failed to load QUILL_MODEL={path}: {err:#}");
+                    eprintln!("[quill] failed to load {}: {err:#}", p.display());
                     None
                 }
             },
-            Err(_) => {
-                eprintln!("[quill] QUILL_MODEL unset; rewrite disabled until set");
+            Some(p) => {
+                eprintln!("[quill] model path does not exist: {}", p.display());
+                None
+            }
+            None => {
+                eprintln!("[quill] no model path resolved (QUILL_MODEL unset, no bundled resource); rewrite disabled");
                 None
             }
         };
@@ -91,13 +95,27 @@ pub struct RewriteState;
 
 #[cfg(not(feature = "llm"))]
 impl RewriteState {
-    pub fn new() -> Self {
+    pub fn from_path(_: Option<std::path::PathBuf>) -> Self {
         Self
     }
 
     pub fn is_loaded(&self) -> bool {
         false
     }
+}
+
+/// Resolve the model path: prefer QUILL_MODEL env var (dev override), fall back
+/// to the bundled `resources/quill-q4_k_m.gguf` shipped inside the .app.
+fn resolve_model_path(app: &tauri::App) -> Option<std::path::PathBuf> {
+    if let Ok(env) = std::env::var("QUILL_MODEL") {
+        return Some(env.into());
+    }
+    app.path()
+        .resolve(
+            "resources/quill-q4_k_m.gguf",
+            tauri::path::BaseDirectory::Resource,
+        )
+        .ok()
 }
 
 fn wire_lints_from<I: IntoIterator<Item = harper_core::linting::Lint>>(lints: I) -> Vec<WireLint> {
@@ -186,7 +204,8 @@ pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
             app.manage(CheckerState::new());
-            app.manage(RewriteState::new());
+            let model_path = resolve_model_path(app);
+            app.manage(RewriteState::from_path(model_path));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![check, capabilities, rewrite])

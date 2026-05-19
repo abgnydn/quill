@@ -22,6 +22,22 @@
     "withGlobalTauri": true
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "targets": ["app", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": ["resources/quill-q4_k_m.gguf"],
+    "category": "Productivity",
+    "shortDescription": "Local-first grammar assistant",
+    "longDescription": "Native desktop grammar checker combining Harper rules with a fine-tuned Gemma 3 270M LoRA. 100% on-device, no network calls.",
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "frameworks": []
+    }
   }
 }
