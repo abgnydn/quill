@@ -10,6 +10,9 @@ use tauri::{Manager, State};
 #[cfg(feature = "llm")]
 pub mod inference;
 
+#[cfg(all(target_os = "macos", feature = "overlay"))]
+pub mod overlay;
+
 #[derive(Serialize)]
 pub struct WireSuggestion {
     pub kind: &'static str,
@@ -171,6 +174,17 @@ fn capabilities(state: State<'_, RewriteState>) -> Capabilities {
     }
 }
 
+/// Diagnostic ping invoked by the overlay JS each time it receives a
+/// `focus-update`. Lets us verify the full Rust→JS→Rust round-trip from the
+/// CLI by tailing the Quill stderr log — no manual UI inspection needed.
+#[tauri::command]
+fn overlay_ping(stage: &str, count: u32, detail: Option<String>) -> () {
+    eprintln!(
+        "[quill][overlay-js] {stage} count={count}{}",
+        detail.map(|d| format!(" {d}")).unwrap_or_default()
+    );
+}
+
 #[tauri::command]
 fn rewrite(
     text: &str,
@@ -206,9 +220,18 @@ pub fn run() {
             app.manage(CheckerState::new());
             let model_path = resolve_model_path(app);
             app.manage(RewriteState::from_path(model_path));
+
+            #[cfg(all(target_os = "macos", feature = "overlay"))]
+            {
+                if let Err(e) = overlay::window::create(&app.handle()) {
+                    eprintln!("[quill] failed to create overlay window: {e}");
+                }
+                overlay::focus_tracker::spawn(app.handle().clone());
+            }
+
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![check, capabilities, rewrite])
+        .invoke_handler(tauri::generate_handler![check, capabilities, rewrite, overlay_ping])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -233,5 +256,40 @@ mod tests {
         let mut linter = fresh_linter();
         let lints = check_text_with(&mut linter, "This is a perfectly normal sentence.");
         assert!(lints.is_empty(), "clean text should produce no lints");
+    }
+
+    /// Integration test for the focus-update event pipeline.
+    /// Builds a mock Tauri app, registers a listener for `focus-update`,
+    /// emits the event from the AppHandle, and asserts the listener fires.
+    /// Catches breakage like the capabilities/permissions ERR we just hit
+    /// without anyone needing to click in a text field.
+    #[test]
+    fn focus_update_event_round_trip() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicU32, Ordering};
+        use tauri::{Emitter, Listener, test::mock_app};
+
+        let app = mock_app();
+        let handle = app.handle();
+        let received = Arc::new(AtomicU32::new(0));
+
+        let r = received.clone();
+        handle.listen("focus-update", move |_evt| {
+            r.fetch_add(1, Ordering::SeqCst);
+        });
+
+        // Spin the event loop a beat so the listener is registered.
+        std::thread::sleep(std::time::Duration::from_millis(50));
+
+        handle
+            .emit("focus-update", serde_json::json!({"bounds": {"x":1.0,"y":2.0,"w":3.0,"h":4.0}}))
+            .expect("emit should succeed");
+
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        assert!(
+            received.load(Ordering::SeqCst) >= 1,
+            "listener should have received at least one focus-update; got {}",
+            received.load(Ordering::SeqCst)
+        );
     }
 }

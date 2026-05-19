@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Quill Overlay</title>
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        width: 100%;
+        background: transparent;
+        overflow: hidden;
+        pointer-events: none;
+        font: 12px/1.3 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+        color: white;
+      }
+
+      /* The focus box itself. */
+      #box {
+        position: absolute;
+        box-sizing: border-box;
+        border-radius: 6px;
+        display: none;
+        pointer-events: none;
+        transition: top 0.08s cubic-bezier(.2,.7,.2,1),
+                    left 0.08s cubic-bezier(.2,.7,.2,1),
+                    width 0.08s cubic-bezier(.2,.7,.2,1),
+                    height 0.08s cubic-bezier(.2,.7,.2,1);
+        outline: 3px solid rgba(124, 156, 255, 0.9);
+        outline-offset: 2px;
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+
+      @keyframes pulse {
+        0%, 100% {
+          outline-color: rgba(124, 156, 255, 0.9);
+          box-shadow: 0 0 0 0 rgba(124, 156, 255, 0.0),
+                      0 0 14px 2px rgba(124, 156, 255, 0.35);
+        }
+        50% {
+          outline-color: rgba(168, 196, 255, 1);
+          box-shadow: 0 0 0 6px rgba(124, 156, 255, 0.15),
+                      0 0 24px 4px rgba(124, 156, 255, 0.55);
+        }
+      }
+
+      /* Big bottom-right floating badge — visible even when border is small. */
+      #badge {
+        position: absolute;
+        display: none;
+        pointer-events: none;
+        background: linear-gradient(135deg, #7c9cff 0%, #5a7cff 100%);
+        color: #0f1115;
+        padding: 8px 14px 8px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45),
+                    0 0 0 2px rgba(255, 255, 255, 0.12) inset;
+        transition: opacity 0.18s ease, transform 0.18s ease;
+        transform-origin: top right;
+      }
+      #badge::before {
+        content: "✎";
+        margin-right: 6px;
+        font-size: 13px;
+      }
+
+      /* Always-on corner indicator so user knows Quill is alive.
+       * Positioned via JS once we know screen dimensions — the overlay
+       * window itself is much larger than the screen, so we can't use
+       * `bottom: 18px` (would land far off-screen). */
+      #corner {
+        position: fixed;
+        top: 18px;
+        left: 18px;
+        width: 44px;
+        height: 44px;
+        border-radius: 50%;
+        background: rgba(124, 156, 255, 0.85);
+        border: 2px solid rgba(168, 196, 255, 1);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        font-weight: 800;
+        color: #0f1115;
+        pointer-events: none;
+        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6),
+                    0 0 20px rgba(124, 156, 255, 0.6);
+        z-index: 10000;
+      }
+      #corner.active {
+        background: rgba(124, 156, 255, 0.85);
+        color: #0f1115;
+        animation: cornerPulse 0.5s ease-out;
+      }
+      @keyframes cornerPulse {
+        0%   { transform: scale(1); }
+        50%  { transform: scale(1.25); }
+        100% { transform: scale(1); }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="box"></div>
+    <div id="badge">Quill watching</div>
+    <div id="corner">Q</div>
+    <script>
+      // === DIAGNOSTIC OVERLAY ===
+      // Stage indicators in the corner badge so we can see exactly where the
+      // pipeline fails when the user only sees what we render. If they ever
+      // see "?T" the Tauri JS API isn't injected. "OK" → script ran fine.
+      // "LSTN" → listen() registered successfully. Number → events arrived.
+      const corner = document.getElementById("corner");
+      const box = document.getElementById("box");
+      const badge = document.getElementById("badge");
+
+      corner.textContent = "JS";  // confirm <script> reached this line
+      corner.title = "script loaded";
+
+      if (!window.__TAURI__ || !window.__TAURI__.event || !window.__TAURI__.core) {
+        corner.textContent = "?T";
+        corner.title = "window.__TAURI__ missing";
+        throw new Error("no tauri api");
+      }
+      const { listen } = window.__TAURI__.event;
+      const { invoke } = window.__TAURI__.core;
+
+      // Round-trip ping: every state change calls back into Rust so the
+      // CLI can grep /tmp/quill.log instead of relying on visual inspection.
+      function ping(stage, count, detail) {
+        invoke("overlay_ping", { stage, count, detail: detail || null })
+          .catch((e) => { corner.title = "ping failed: " + String(e); });
+      }
+      ping("script-loaded", 0);
+
+      // Mark that we got past the import.
+      corner.textContent = "OK";
+      corner.title = "tauri api present, registering listener…";
+
+      let eventCount = 0;
+      function updateCornerLabel() {
+        corner.textContent = eventCount > 0 ? String(eventCount) : "LSTN";
+        corner.title = `Quill: ${eventCount} focus events received`;
+      }
+
+      function hideBox() {
+        box.style.display = "none";
+        badge.style.display = "none";
+      }
+
+      let cornerTimer = null;
+      function flashCorner() {
+        corner.classList.add("active");
+        clearTimeout(cornerTimer);
+        cornerTimer = setTimeout(() => corner.classList.remove("active"), 500);
+      }
+
+      listen("focus-update", (evt) => {
+        eventCount++;
+        updateCornerLabel();
+        const b = evt.payload && evt.payload.bounds;
+        ping("event", eventCount, b ? `x=${b.x|0} y=${b.y|0} w=${b.w|0} h=${b.h|0}` : "no-bounds");
+      }).then(() => {
+        if (eventCount === 0) updateCornerLabel();
+        ping("listen-registered", 0);
+      }).catch((err) => {
+        corner.textContent = "ERR";
+        corner.title = "listen() failed: " + String(err);
+        ping("listen-error", 0, String(err));
+      });
+
+      // Force second listener call to swallow the unused arg (TS-style hack):
+      listen("focus-update", (evt) => {
+        // duplicate handler — harmless, keeps the path covered
+        const b = evt.payload && evt.payload.bounds;
+        if (!b || b.w < 12 || b.h < 12) {
+          hideBox();
+          return;
+        }
+        box.style.display = "block";
+        box.style.left = b.x + "px";
+        box.style.top = b.y + "px";
+        box.style.width = b.w + "px";
+        box.style.height = b.h + "px";
+
+        badge.style.display = "block";
+        // Park badge at top-right of the focused element.
+        badge.style.left = (b.x + b.w - 110) + "px";
+        badge.style.top = Math.max(8, b.y - 38) + "px";
+
+        flashCorner();
+      });
+    </script>
+  </body>
+</html>

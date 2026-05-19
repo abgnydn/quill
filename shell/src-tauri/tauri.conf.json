@@ -19,7 +19,8 @@
     "security": {
       "csp": null
     },
-    "withGlobalTauri": true
+    "withGlobalTauri": true,
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
@@ -37,7 +38,8 @@
     "longDescription": "Native desktop grammar checker combining Harper rules with a fine-tuned Gemma 3 270M LoRA. 100% on-device, no network calls.",
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "frameworks": []
+      "frameworks": [],
+      "signingIdentity": "-"
     }
   }
 }
