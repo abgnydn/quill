@@ -12,189 +12,417 @@
         background: transparent;
         overflow: hidden;
         pointer-events: none;
-        font: 12px/1.3 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
-        color: white;
+        font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+        color: #e6e9ef;
       }
 
-      /* The focus box itself. */
+      /* Subtle focus box. */
       #box {
         position: absolute;
         box-sizing: border-box;
         border-radius: 6px;
         display: none;
         pointer-events: none;
-        transition: top 0.08s cubic-bezier(.2,.7,.2,1),
-                    left 0.08s cubic-bezier(.2,.7,.2,1),
-                    width 0.08s cubic-bezier(.2,.7,.2,1),
-                    height 0.08s cubic-bezier(.2,.7,.2,1);
-        outline: 3px solid rgba(124, 156, 255, 0.9);
+        outline: 1.5px solid rgba(124, 156, 255, 0.35);
         outline-offset: 2px;
-        animation: pulse 1.6s ease-in-out infinite;
       }
 
-      @keyframes pulse {
-        0%, 100% {
-          outline-color: rgba(124, 156, 255, 0.9);
-          box-shadow: 0 0 0 0 rgba(124, 156, 255, 0.0),
-                      0 0 14px 2px rgba(124, 156, 255, 0.35);
-        }
-        50% {
-          outline-color: rgba(168, 196, 255, 1);
-          box-shadow: 0 0 0 6px rgba(124, 156, 255, 0.15),
-                      0 0 24px 4px rgba(124, 156, 255, 0.55);
-        }
+      /* Per-lint inline underline overlays. */
+      .underline {
+        position: absolute;
+        pointer-events: auto;
+        cursor: pointer;
+        background-repeat: repeat-x;
+        background-position: bottom left;
+        background-size: 6px 3px;
+      }
+      .underline.spelling {
+        background-image: linear-gradient(135deg,
+          transparent 0%, transparent 40%, #ff7a7a 40%, #ff7a7a 60%, transparent 60%);
+      }
+      .underline.agreement {
+        background-image: linear-gradient(135deg,
+          transparent 0%, transparent 40%, #7c9cff 40%, #7c9cff 60%, transparent 60%);
+      }
+      .underline.style {
+        background-image: linear-gradient(135deg,
+          transparent 0%, transparent 40%, #ffb86b 40%, #ffb86b 60%, transparent 60%);
+      }
+      .underline.misc {
+        background-image: linear-gradient(135deg,
+          transparent 0%, transparent 40%, #ffb86b 40%, #ffb86b 60%, transparent 60%);
       }
 
-      /* Big bottom-right floating badge — visible even when border is small. */
-      #badge {
+      /* Floating lint panel. */
+      #panel {
         position: absolute;
         display: none;
         pointer-events: none;
-        background: linear-gradient(135deg, #7c9cff 0%, #5a7cff 100%);
-        color: #0f1115;
-        padding: 8px 14px 8px 12px;
-        border-radius: 999px;
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 0.04em;
-        text-transform: uppercase;
-        box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45),
-                    0 0 0 2px rgba(255, 255, 255, 0.12) inset;
-        transition: opacity 0.18s ease, transform 0.18s ease;
-        transform-origin: top right;
+        width: 340px;
+        background: rgba(22, 25, 34, 0.97);
+        border: 1px solid #2a3046;
+        border-radius: 12px;
+        padding: 12px;
+        box-shadow: 0 16px 48px rgba(0, 0, 0, 0.55),
+                    0 0 0 1px rgba(124, 156, 255, 0.18) inset;
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        z-index: 100;
+        max-height: 60vh;
+        overflow-y: auto;
+        pointer-events: auto;
       }
-      #badge::before {
-        content: "✎";
-        margin-right: 6px;
-        font-size: 13px;
-      }
-
-      /* Always-on corner indicator so user knows Quill is alive.
-       * Positioned via JS once we know screen dimensions — the overlay
-       * window itself is much larger than the screen, so we can't use
-       * `bottom: 18px` (would land far off-screen). */
-      #corner {
-        position: fixed;
-        top: 18px;
-        left: 18px;
-        width: 44px;
-        height: 44px;
-        border-radius: 50%;
-        background: rgba(124, 156, 255, 0.85);
-        border: 2px solid rgba(168, 196, 255, 1);
+      #panel.visible { display: block; }
+      .panel-header {
         display: flex;
         align-items: center;
-        justify-content: center;
-        font-size: 18px;
+        justify-content: space-between;
+        margin-bottom: 10px;
+      }
+      .panel-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #7c9cff;
         font-weight: 800;
+      }
+      .panel-title::before { content: "✎  "; }
+      .rewrite-btn {
+        background: linear-gradient(135deg, #7c9cff 0%, #5a7cff 100%);
         color: #0f1115;
+        border: none;
+        padding: 4px 10px;
+        font-size: 11px;
+        font-weight: 700;
+        border-radius: 5px;
+        cursor: pointer;
+        pointer-events: auto;
+        letter-spacing: 0.03em;
+      }
+      .rewrite-btn:hover { filter: brightness(1.1); }
+      .rewrite-btn:disabled { opacity: 0.5; cursor: progress; }
+
+      .lint-row {
+        background: #1c2030;
+        border-radius: 7px;
+        padding: 8px 10px;
+        margin-bottom: 6px;
+        border-left: 3px solid #ffb86b;
+      }
+      .lint-row:last-child { margin-bottom: 0; }
+      .lint-row.spelling { border-left-color: #ff7a7a; }
+      .lint-row.agreement { border-left-color: #7c9cff; }
+      .lint-row.style { border-left-color: #ffb86b; }
+
+      .lint-kind {
+        font-size: 10px;
+        color: #8b93a7;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 2px;
+      }
+      .lint-target {
+        font-family: ui-monospace, "SF Mono", Menlo, monospace;
+        font-size: 11px;
+        background: #0c0e14;
+        padding: 1px 6px;
+        border-radius: 3px;
+        margin-left: 4px;
+        color: #ffb86b;
+      }
+      .lint-row.spelling .lint-target { color: #ff7a7a; }
+      .lint-row.agreement .lint-target { color: #7c9cff; }
+
+      .lint-msg {
+        font-size: 12.5px;
+        line-height: 1.4;
+        margin-bottom: 6px;
+        color: #e6e9ef;
+      }
+      .lint-suggs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .sugg {
+        background: #2a3046;
+        color: #e6e9ef;
+        border: none;
+        padding: 3px 8px;
+        font-size: 11.5px;
+        border-radius: 4px;
+        font-family: ui-monospace, monospace;
+        pointer-events: auto;
+        cursor: pointer;
+      }
+      .sugg:hover {
+        background: #7c9cff;
+        color: #0f1115;
+      }
+      .sugg.remove { font-style: italic; opacity: 0.85; }
+      .sugg.applied { opacity: 0.4; pointer-events: none; }
+      .rewrite-output {
+        background: #1c2030;
+        border-radius: 7px;
+        padding: 10px;
+        margin-top: 8px;
+        border-left: 3px solid #7c9cff;
+        font-size: 12px;
+        line-height: 1.45;
+        font-family: ui-monospace, monospace;
+        word-wrap: break-word;
+        display: none;
+      }
+      .rewrite-output.visible { display: block; }
+      .rewrite-output .label {
+        font-size: 10px;
+        color: #7c9cff;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 4px;
+      }
+      .rewrite-output .actions {
+        margin-top: 8px;
+        display: flex;
+        gap: 6px;
+      }
+
+      /* Status corner. */
+      #corner {
+        position: fixed;
+        top: 14px;
+        left: 14px;
+        height: 26px;
+        min-width: 26px;
+        padding: 0 10px;
+        border-radius: 999px;
+        background: rgba(22, 25, 34, 0.85);
+        border: 1px solid rgba(124, 156, 255, 0.4);
+        display: flex;
+        align-items: center;
+        font-size: 11px;
+        font-weight: 600;
+        color: #7c9cff;
         pointer-events: none;
-        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.6),
-                    0 0 20px rgba(124, 156, 255, 0.6);
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
         z-index: 10000;
-      }
-      #corner.active {
-        background: rgba(124, 156, 255, 0.85);
-        color: #0f1115;
-        animation: cornerPulse 0.5s ease-out;
-      }
-      @keyframes cornerPulse {
-        0%   { transform: scale(1); }
-        50%  { transform: scale(1.25); }
-        100% { transform: scale(1); }
       }
     </style>
   </head>
   <body>
     <div id="box"></div>
-    <div id="badge">Quill watching</div>
+    <div id="underlines"></div>
+    <div id="panel">
+      <div class="panel-header">
+        <span class="panel-title" id="panel-title">Quill</span>
+        <button class="rewrite-btn" id="rewrite-all">↻ Rewrite with AI</button>
+      </div>
+      <div id="lints"></div>
+      <div class="rewrite-output" id="rewrite-output">
+        <div class="label">LLM rewrite</div>
+        <div id="rewrite-text"></div>
+        <div class="actions">
+          <button class="sugg" id="rewrite-apply">✓ Apply</button>
+          <button class="sugg" id="rewrite-dismiss">Dismiss</button>
+        </div>
+      </div>
+    </div>
     <div id="corner">Q</div>
+
     <script>
-      // === DIAGNOSTIC OVERLAY ===
-      // Stage indicators in the corner badge so we can see exactly where the
-      // pipeline fails when the user only sees what we render. If they ever
-      // see "?T" the Tauri JS API isn't injected. "OK" → script ran fine.
-      // "LSTN" → listen() registered successfully. Number → events arrived.
       const corner = document.getElementById("corner");
       const box = document.getElementById("box");
-      const badge = document.getElementById("badge");
-
-      corner.textContent = "JS";  // confirm <script> reached this line
-      corner.title = "script loaded";
+      const panel = document.getElementById("panel");
+      const panelTitle = document.getElementById("panel-title");
+      const lintsEl = document.getElementById("lints");
+      const underlinesEl = document.getElementById("underlines");
+      const rewriteBtn = document.getElementById("rewrite-all");
+      const rewriteOut = document.getElementById("rewrite-output");
+      const rewriteText = document.getElementById("rewrite-text");
+      const rewriteApply = document.getElementById("rewrite-apply");
+      const rewriteDismiss = document.getElementById("rewrite-dismiss");
 
       if (!window.__TAURI__ || !window.__TAURI__.event || !window.__TAURI__.core) {
         corner.textContent = "?T";
-        corner.title = "window.__TAURI__ missing";
         throw new Error("no tauri api");
       }
       const { listen } = window.__TAURI__.event;
       const { invoke } = window.__TAURI__.core;
 
-      // Round-trip ping: every state change calls back into Rust so the
-      // CLI can grep /tmp/quill.log instead of relying on visual inspection.
       function ping(stage, count, detail) {
-        invoke("overlay_ping", { stage, count, detail: detail || null })
-          .catch((e) => { corner.title = "ping failed: " + String(e); });
+        invoke("overlay_ping", { stage, count, detail: detail || null }).catch(() => {});
       }
       ping("script-loaded", 0);
 
-      // Mark that we got past the import.
-      corner.textContent = "OK";
-      corner.title = "tauri api present, registering listener…";
-
+      // ---- state ----
       let eventCount = 0;
-      function updateCornerLabel() {
-        corner.textContent = eventCount > 0 ? String(eventCount) : "LSTN";
-        corner.title = `Quill: ${eventCount} focus events received`;
+      let currentText = "";
+      let currentBounds = null;
+      let currentLints = [];
+
+      function updateCorner() {
+        const n = currentLints.length;
+        corner.textContent = `Q · ${eventCount}${n ? " · " + n : ""}`;
+      }
+      updateCorner();
+
+      function escapeHtml(s) {
+        return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+      }
+      function kindClass(kind) {
+        const k = String(kind).toLowerCase();
+        if (k.includes("spell")) return "spelling";
+        if (k.includes("agreement")) return "agreement";
+        if (k.includes("style") || k.includes("punct") || k.includes("article")) return "style";
+        return "misc";
       }
 
-      function hideBox() {
-        box.style.display = "none";
-        badge.style.display = "none";
+      function renderUnderlines(lints) {
+        underlinesEl.innerHTML = "";
+        for (const l of lints) {
+          if (!l.rect || l.rect.w < 1 || l.rect.h < 1) continue;
+          const u = document.createElement("div");
+          u.className = "underline " + kindClass(l.kind);
+          u.style.left = l.rect.x + "px";
+          u.style.top = (l.rect.y + l.rect.h - 3) + "px";
+          u.style.width = l.rect.w + "px";
+          u.style.height = "3px";
+          u.title = l.message;
+          underlinesEl.appendChild(u);
+        }
       }
 
-      let cornerTimer = null;
-      function flashCorner() {
-        corner.classList.add("active");
-        clearTimeout(cornerTimer);
-        cornerTimer = setTimeout(() => corner.classList.remove("active"), 500);
-      }
-
-      listen("focus-update", (evt) => {
-        eventCount++;
-        updateCornerLabel();
-        const b = evt.payload && evt.payload.bounds;
-        ping("event", eventCount, b ? `x=${b.x|0} y=${b.y|0} w=${b.w|0} h=${b.h|0}` : "no-bounds");
-      }).then(() => {
-        if (eventCount === 0) updateCornerLabel();
-        ping("listen-registered", 0);
-      }).catch((err) => {
-        corner.textContent = "ERR";
-        corner.title = "listen() failed: " + String(err);
-        ping("listen-error", 0, String(err));
-      });
-
-      // Force second listener call to swallow the unused arg (TS-style hack):
-      listen("focus-update", (evt) => {
-        // duplicate handler — harmless, keeps the path covered
-        const b = evt.payload && evt.payload.bounds;
-        if (!b || b.w < 12 || b.h < 12) {
-          hideBox();
+      function renderPanel(lints, bounds) {
+        if (!lints.length) {
+          panel.classList.remove("visible");
           return;
         }
-        box.style.display = "block";
-        box.style.left = b.x + "px";
-        box.style.top = b.y + "px";
-        box.style.width = b.w + "px";
-        box.style.height = b.h + "px";
+        panelTitle.textContent = `Quill — ${lints.length}`;
+        lintsEl.innerHTML = lints.map((l, i) => {
+          const slice = [...(currentText || "")].slice(l.start, l.end).join("");
+          const suggs = (l.suggestions || []).map((s, j) => {
+            const label = s.kind === "remove" ? "⌫ remove" : escapeHtml(s.text || "");
+            return `<button class="sugg ${s.kind === "remove" ? "remove" : ""}"
+                            data-lint="${i}" data-sugg="${j}">${label}</button>`;
+          }).join("");
+          return `<div class="lint-row ${kindClass(l.kind)}">
+            <div class="lint-kind">${escapeHtml(l.kind)}<span class="lint-target">${escapeHtml(slice)}</span></div>
+            <div class="lint-msg">${escapeHtml(l.message)}</div>
+            ${suggs ? `<div class="lint-suggs">${suggs}</div>` : ""}
+          </div>`;
+        }).join("");
 
-        badge.style.display = "block";
-        // Park badge at top-right of the focused element.
-        badge.style.left = (b.x + b.w - 110) + "px";
-        badge.style.top = Math.max(8, b.y - 38) + "px";
+        // Smart anchor: prefer to the right; flip below if no room.
+        const W = window.innerWidth, H = window.innerHeight;
+        const pw = 340 + 24;
+        let x = bounds.x + bounds.w + 12;
+        let y = bounds.y;
+        if (x + pw > W) {
+          x = bounds.x;
+          y = bounds.y + bounds.h + 12;
+        }
+        if (y + 300 > H) y = Math.max(8, H - 320);
+        panel.style.left = Math.max(8, x) + "px";
+        panel.style.top  = Math.max(8, y) + "px";
+        panel.classList.add("visible");
+      }
 
-        flashCorner();
+      // ---- handlers ----
+      async function applySuggestion(lintIdx, suggIdx, btn) {
+        const l = currentLints[lintIdx];
+        if (!l) return;
+        const s = l.suggestions[suggIdx];
+        if (!s) return;
+
+        let start = l.start, end = l.end, replacement = s.text || "";
+        if (s.kind === "remove") replacement = "";
+        else if (s.kind === "insert_after") { start = l.end; end = l.end; }
+
+        if (btn) btn.classList.add("applied");
+        try {
+          await invoke("apply_suggestion", { start, end, replacement });
+          ping("apply-ok", lintIdx, `${l.kind} -> "${replacement.slice(0,40)}"`);
+        } catch (err) {
+          ping("apply-err", lintIdx, String(err));
+          if (btn) btn.classList.remove("applied");
+        }
+      }
+
+      lintsEl.addEventListener("click", (e) => {
+        const t = e.target;
+        if (t && t.classList && t.classList.contains("sugg")) {
+          applySuggestion(parseInt(t.dataset.lint, 10), parseInt(t.dataset.sugg, 10), t);
+        }
       });
+
+      // ---- LLM rewrite ----
+      let lastRewrite = "";
+      rewriteBtn.addEventListener("click", async () => {
+        if (!currentText) return;
+        rewriteBtn.disabled = true;
+        rewriteOut.classList.remove("visible");
+        rewriteText.textContent = "thinking…";
+        rewriteOut.classList.add("visible");
+        try {
+          const out = await invoke("rewrite", { text: currentText, instruction: null });
+          lastRewrite = String(out || "");
+          rewriteText.textContent = lastRewrite;
+        } catch (err) {
+          rewriteText.textContent = "error: " + String(err);
+        } finally {
+          rewriteBtn.disabled = false;
+        }
+      });
+      rewriteApply.addEventListener("click", async () => {
+        if (!lastRewrite || !currentText) return;
+        try {
+          await invoke("apply_suggestion", {
+            start: 0, end: [...currentText].length, replacement: lastRewrite,
+          });
+          rewriteOut.classList.remove("visible");
+          ping("rewrite-apply-ok", 0, lastRewrite.slice(0, 60));
+        } catch (err) {
+          ping("rewrite-apply-err", 0, String(err));
+        }
+      });
+      rewriteDismiss.addEventListener("click", () => {
+        rewriteOut.classList.remove("visible");
+      });
+
+      // ---- focus updates ----
+      listen("focus-update", (evt) => {
+        eventCount++;
+        const p = evt.payload || {};
+        currentBounds = p.bounds || null;
+        currentText = p.text || "";
+        currentLints = p.lints || [];
+        updateCorner();
+        ping("event", eventCount,
+          `lints=${currentLints.length} text_len=${currentText.length}`);
+
+        if (!currentBounds || currentBounds.w < 12 || currentBounds.h < 12) {
+          box.style.display = "none";
+          underlinesEl.innerHTML = "";
+          panel.classList.remove("visible");
+          rewriteOut.classList.remove("visible");
+          return;
+        }
+
+        box.style.display = "block";
+        box.style.left = currentBounds.x + "px";
+        box.style.top = currentBounds.y + "px";
+        box.style.width = currentBounds.w + "px";
+        box.style.height = currentBounds.h + "px";
+
+        renderUnderlines(currentLints);
+        renderPanel(currentLints, currentBounds);
+
+        // dismiss stale rewrite preview when text changes
+        if (lastRewrite && lastRewrite !== currentText) {
+          rewriteOut.classList.remove("visible");
+        }
+      }).then(() => ping("listen-registered", 0))
+        .catch((err) => ping("listen-error", 0, String(err)));
     </script>
   </body>
 </html>

@@ -13,13 +13,13 @@ pub mod inference;
 #[cfg(all(target_os = "macos", feature = "overlay"))]
 pub mod overlay;
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
 pub struct WireSuggestion {
     pub kind: &'static str,
     pub text: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone, Debug)]
 pub struct WireLint {
     pub start: usize,
     pub end: usize,
@@ -185,6 +185,22 @@ fn overlay_ping(stage: &str, count: u32, detail: Option<String>) -> () {
     );
 }
 
+/// Apply a correction to the currently-focused text field. Writes through
+/// AXUI: selects the span, replaces it with `replacement`. No-op when the
+/// `overlay` feature is off.
+#[tauri::command]
+fn apply_suggestion(start: u32, end: u32, replacement: String) -> Result<(), String> {
+    #[cfg(all(target_os = "macos", feature = "overlay"))]
+    {
+        overlay::apply::apply(start, end, &replacement).map_err(|e| e.to_string())
+    }
+    #[cfg(not(all(target_os = "macos", feature = "overlay")))]
+    {
+        let _ = (start, end, replacement);
+        Err("apply_suggestion requires the 'overlay' feature on macOS".into())
+    }
+}
+
 #[tauri::command]
 fn rewrite(
     text: &str,
@@ -231,7 +247,9 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![check, capabilities, rewrite, overlay_ping])
+        .invoke_handler(tauri::generate_handler![
+            check, capabilities, rewrite, overlay_ping, apply_suggestion
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

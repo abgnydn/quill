@@ -3,5 +3,6 @@
 
 #![cfg(all(target_os = "macos", feature = "overlay"))]
 
+pub mod apply;
 pub mod focus_tracker;
 pub mod window;

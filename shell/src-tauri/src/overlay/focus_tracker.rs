@@ -10,11 +10,15 @@ use std::thread;
 use std::time::Duration;
 
 use accessibility_sys::{
-    AXIsProcessTrustedWithOptions, AXUIElementCopyAttributeValue, AXUIElementCreateSystemWide,
-    AXUIElementRef, AXValueGetValue, AXValueRef, kAXErrorSuccess,
-    kAXFocusedApplicationAttribute, kAXFocusedUIElementAttribute, kAXPositionAttribute,
-    kAXSizeAttribute, kAXTrustedCheckOptionPrompt, kAXValueTypeCGPoint, kAXValueTypeCGSize,
+    AXIsProcessTrustedWithOptions, AXUIElementCopyAttributeValue,
+    AXUIElementCopyParameterizedAttributeValue, AXUIElementCreateSystemWide, AXUIElementRef,
+    AXValueCreate, AXValueGetValue, AXValueRef, kAXBoundsForRangeParameterizedAttribute,
+    kAXErrorSuccess, kAXFocusedApplicationAttribute, kAXFocusedUIElementAttribute,
+    kAXPositionAttribute, kAXSizeAttribute, kAXTrustedCheckOptionPrompt, kAXValueAttribute,
+    kAXValueTypeCFRange, kAXValueTypeCGPoint, kAXValueTypeCGRect, kAXValueTypeCGSize,
 };
+use core_foundation::base::{CFIndex, CFRange, CFType};
+use core_graphics::geometry::CGRect;
 use core_foundation::base::{CFRelease, CFTypeRef, TCFType};
 use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
@@ -53,9 +57,21 @@ mod tests {
     }
 }
 
+/// A WireLint plus the precomputed screen rect for its character span.
+/// `rect` is `None` if AXUI's `kAXBoundsForRangeParameterizedAttribute` failed
+/// for this element (common in web text inputs).
+#[derive(Serialize, Clone, Debug)]
+pub struct PositionedLint {
+    #[serde(flatten)]
+    pub lint: crate::WireLint,
+    pub rect: Option<FocusBounds>,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct FocusEvent {
     pub bounds: Option<FocusBounds>,
+    pub text: Option<String>,
+    pub lints: Vec<PositionedLint>,
 }
 
 /// Spawn the polling thread. Returns immediately; logs Accessibility-permission
@@ -65,6 +81,15 @@ pub fn spawn(app: AppHandle) {
         .name("quill-focus-tracker".into())
         .spawn(move || run(app))
         .expect("spawn focus-tracker thread");
+}
+
+/// Build a private LintGroup for the tracker thread. Harper's `concurrent`
+/// feature is enabled in Cargo.toml so the dictionary is `Send`.
+fn fresh_linter() -> harper_core::linting::LintGroup {
+    use harper_core::Dialect;
+    use harper_core::linting::LintGroup;
+    use harper_core::spell::FstDictionary;
+    LintGroup::new_curated(FstDictionary::curated(), Dialect::American)
 }
 
 fn run(app: AppHandle) {
@@ -87,32 +112,84 @@ fn run(app: AppHandle) {
     }
 
     let system_wide = unsafe { AXUIElementCreateSystemWide() };
-    let mut last: Option<FocusBounds> = None;
+    let mut linter = fresh_linter();
+    let mut last_bounds: Option<FocusBounds> = None;
+    let mut last_text_hash: u64 = 0;
     let mut tick = 0u32;
 
     loop {
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(150));
         tick = tick.wrapping_add(1);
 
-        let bounds = focused_bounds(system_wide);
-        if bounds != last {
-            eprintln!(
-                "[quill] focus-update: {:?}",
-                bounds.as_ref().map(|b| format!("x={:.0} y={:.0} w={:.0} h={:.0}", b.x, b.y, b.w, b.h))
-                    .unwrap_or_else(|| "<none>".into())
-            );
-            let payload = FocusEvent { bounds: bounds.clone() };
-            // Send to the overlay window specifically. The global `emit` is
-            // supposed to broadcast but we saw events not reaching the overlay
-            // webview in practice — `emit_to` is the reliable form.
-            if let Err(e) = app.emit_to(OVERLAY_LABEL, "focus-update", &payload) {
-                eprintln!("[quill] emit_to overlay failed: {e}");
+        let snapshot = focused_snapshot(system_wide);
+        let bounds_changed = snapshot.as_ref().map(|s| &s.bounds) != last_bounds.as_ref();
+        let text_hash = snapshot
+            .as_ref()
+            .and_then(|s| s.text.as_deref())
+            .map(simple_hash)
+            .unwrap_or(0);
+        let text_changed = text_hash != last_text_hash;
+
+        if !bounds_changed && !text_changed {
+            if tick % 60 == 0 {
+                eprintln!("[quill] focus-tracker heartbeat (no change in 9s)");
             }
-            let _ = app.emit("focus-update", &payload);
-            last = bounds;
-        } else if tick % 50 == 0 {
-            eprintln!("[quill] focus-tracker heartbeat (no change in last 5s)");
+            continue;
         }
+
+        let (bounds, text, elem_ref) = match snapshot {
+            Some(s) => (Some(s.bounds), s.text, s.elem),
+            None => (None, None, std::ptr::null_mut()),
+        };
+
+        // Lint the text if we got any. Harper takes ~5-30ms per check on
+        // typical sentence-length input.
+        let raw_lints: Vec<crate::WireLint> = match &text {
+            Some(t) if !t.is_empty() => crate::check_text_with(&mut linter, t),
+            _ => Vec::new(),
+        };
+
+        // For each lint, ask AXUI where on the screen those characters sit.
+        // Many text fields (Cocoa NSTextView, AppKit) implement
+        // kAXBoundsForRangeParameterizedAttribute; web text inputs often don't.
+        let lints: Vec<PositionedLint> = raw_lints
+            .into_iter()
+            .map(|lint| {
+                let rect = if !elem_ref.is_null() {
+                    bounds_for_range(elem_ref, lint.start, lint.end - lint.start)
+                } else {
+                    None
+                };
+                PositionedLint { lint, rect }
+            })
+            .collect();
+
+        if !elem_ref.is_null() {
+            unsafe { CFRelease(elem_ref as core_foundation::base::CFTypeRef) };
+        }
+
+        eprintln!(
+            "[quill] focus-update: bounds={} text_len={} lints={}",
+            bounds
+                .as_ref()
+                .map(|b| format!("x={:.0} y={:.0} w={:.0} h={:.0}", b.x, b.y, b.w, b.h))
+                .unwrap_or_else(|| "<none>".into()),
+            text.as_deref().map(|t| t.chars().count()).unwrap_or(0),
+            lints.len()
+        );
+
+        let payload = FocusEvent {
+            bounds: bounds.clone(),
+            text: text.clone(),
+            lints,
+        };
+        if let Err(e) = app.emit_to(OVERLAY_LABEL, "focus-update", &payload) {
+            eprintln!("[quill] emit_to overlay failed: {e}");
+        }
+        let _ = app.emit("focus-update", &payload);
+
+        last_bounds = bounds;
+        last_text_hash = text_hash;
     }
 }
 
@@ -125,17 +202,33 @@ fn is_trusted(prompt: bool) -> bool {
     unsafe { AXIsProcessTrustedWithOptions(opts.as_concrete_TypeRef() as _) }
 }
 
-fn focused_bounds(system_wide: AXUIElementRef) -> Option<FocusBounds> {
+struct FocusSnapshot {
+    bounds: FocusBounds,
+    text: Option<String>,
+    /// Borrowed AXUIElementRef — caller must CFRelease when done with it.
+    elem: AXUIElementRef,
+}
+
+fn focused_snapshot(system_wide: AXUIElementRef) -> Option<FocusSnapshot> {
     let focused_app = copy_attr(system_wide, kAXFocusedApplicationAttribute)?;
     let focused_elem = copy_attr(focused_app as AXUIElementRef, kAXFocusedUIElementAttribute);
     unsafe { CFRelease(focused_app) };
     let focused_elem = focused_elem?;
+    let elem_ref = focused_elem as AXUIElementRef;
 
-    let pos = copy_axvalue_cgpoint(focused_elem as AXUIElementRef, kAXPositionAttribute);
-    let size = copy_axvalue_cgsize(focused_elem as AXUIElementRef, kAXSizeAttribute);
-    unsafe { CFRelease(focused_elem) };
+    let pos = copy_axvalue_cgpoint(elem_ref, kAXPositionAttribute);
+    let size = copy_axvalue_cgsize(elem_ref, kAXSizeAttribute);
+    let text = copy_string_attr(elem_ref, kAXValueAttribute);
+    // NOTE: we don't release focused_elem here — caller takes ownership and
+    // releases after using it for per-lint bounds lookups.
 
-    let (p, s) = (pos?, size?);
+    let (p, s) = match (pos, size) {
+        (Some(p), Some(s)) => (p, s),
+        _ => {
+            unsafe { CFRelease(focused_elem) };
+            return None;
+        }
+    };
     let b = FocusBounds {
         x: p.x,
         y: p.y,
@@ -143,9 +236,94 @@ fn focused_bounds(system_wide: AXUIElementRef) -> Option<FocusBounds> {
         h: s.height,
     };
     if !is_plausible_text_field(&b) {
+        unsafe { CFRelease(focused_elem) };
         return None;
     }
-    Some(b)
+    Some(FocusSnapshot {
+        bounds: b,
+        text,
+        elem: elem_ref,
+    })
+}
+
+/// Ask AXUI: where on the screen does character range [start..start+length)
+/// of this element sit? Used for inline underline rendering.
+pub fn bounds_for_range(
+    element: AXUIElementRef,
+    start: usize,
+    length: usize,
+) -> Option<FocusBounds> {
+    if length == 0 {
+        return None;
+    }
+    let range = CFRange {
+        location: start as CFIndex,
+        length: length as CFIndex,
+    };
+    let range_val: AXValueRef = unsafe {
+        AXValueCreate(
+            kAXValueTypeCFRange,
+            &range as *const _ as *const std::ffi::c_void,
+        )
+    };
+    if range_val.is_null() {
+        return None;
+    }
+
+    let attr_cf = CFString::new(kAXBoundsForRangeParameterizedAttribute);
+    let mut out: core_foundation::base::CFTypeRef = std::ptr::null();
+    let err = unsafe {
+        AXUIElementCopyParameterizedAttributeValue(
+            element,
+            attr_cf.as_concrete_TypeRef(),
+            range_val as core_foundation::base::CFTypeRef,
+            &mut out,
+        )
+    };
+    unsafe { CFRelease(range_val as core_foundation::base::CFTypeRef) };
+    if err != kAXErrorSuccess || out.is_null() {
+        return None;
+    }
+    let mut rect = CGRect::new(
+        &core_graphics::geometry::CGPoint::new(0.0, 0.0),
+        &core_graphics::geometry::CGSize::new(0.0, 0.0),
+    );
+    let ok = unsafe {
+        AXValueGetValue(
+            out as AXValueRef,
+            kAXValueTypeCGRect,
+            &mut rect as *mut _ as *mut std::ffi::c_void,
+        )
+    };
+    unsafe { CFRelease(out) };
+    if !ok {
+        return None;
+    }
+    Some(FocusBounds {
+        x: rect.origin.x,
+        y: rect.origin.y,
+        w: rect.size.width,
+        h: rect.size.height,
+    })
+}
+
+/// Read a CFString-valued attribute off the focused element. Returns None
+/// for non-text elements (the attribute is wrong type or absent).
+fn copy_string_attr(element: AXUIElementRef, attr_name: &str) -> Option<String> {
+    let raw = copy_attr(element, attr_name)?;
+    // Verify it's actually a CFString before unsafe-wrapping.
+    let cf_any = unsafe { CFType::wrap_under_create_rule(raw) };
+    cf_any
+        .downcast::<CFString>()
+        .map(|s| s.to_string())
+}
+
+/// Cheap hash for change detection on potentially-large text snapshots.
+fn simple_hash(s: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    s.hash(&mut h);
+    h.finish()
 }
 
 /// Reject AXUI bounds that obviously aren't a real text input — outer
