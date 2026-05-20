@@ -1,7 +1,7 @@
 # Rust
 target/
 **/target/
-Cargo.lock
+# Cargo.lock is committed — this is a binary app, not a library.
 
 # Node
 node_modules/
