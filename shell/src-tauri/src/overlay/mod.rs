@@ -5,4 +5,5 @@
 
 pub mod apply;
 pub mod focus_tracker;
+pub mod mouse_arbiter;
 pub mod window;

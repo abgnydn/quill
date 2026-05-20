@@ -59,24 +59,27 @@ quill/
 - ✅ Train env validated: `uv sync` installs cleanly (py 3.11.14, torch 2.12, transformers 5.8.1, trl 1.4.0, datasets 4.8.5, peft 0.19.1)
 - ✅ CoEdIT dataset confirmed: 69,071 train + 1,712 val, 6 task types (gec, neutralize, simplification, paraphrase, coherence, clarity)
 - ✅ `train.py` updated for TRL 1.4 API renames (`max_seq_length` → `max_length`, `tokenizer=` → `processing_class=`); SFTConfig dry-build succeeds from `configs/lora.yaml`
-- ✅ Inference scaffold: `inference.rs` + `rewrite`/`capabilities` Tauri commands behind `llm` Cargo feature; `quill-rewrite` CLI binary at `src/bin/quill_rewrite.rs`
-- ✅ Frontend Rewrite button + "Apply / Dismiss" UX
+- ✅ Inference scaffold: `inference.rs` + `rewrite`/`capabilities` Tauri commands behind `llm` Cargo feature; `quill-rewrite` CLI binary
 - ✅ Train: Modal L4 → 241 MB `quill-q4_k_m.gguf` at `train/checkpoints/`
-- ✅ Inference works end-to-end: CLI 0.6s cold, GUI **292 ms steady-state** on M2 Metal
-- ✅ Bundle config: GGUF in `shell/src-tauri/resources/`, tauri.conf.json `bundle.active=true`, RewriteState falls back to bundled resource if `QUILL_MODEL` unset
-- ⏳ `cargo tauri build --features llm` running → `.app` at `target/release/bundle/macos/Quill.app`
-- ⏳ Brain writeups: `~/brain/projects/quill.md` + `~/brain/research-vault/experiments/{E38,E39}-quill-*.md` shipped
+- ✅ Inference: CLI 0.6s cold, GUI **292 ms steady-state** on M2 Metal
+- ✅ Drag-install `.app` at `~/Applications/Quill.app` (260 MB, GGUF bundled as Tauri resource)
+- ✅ **Grammarly-style overlay shipping (v0.3)**: AXUI focus tracker + mouse arbiter + click-through window + SVG inline underlines + hover popover + AXUI write-back + fallback panel for web/Electron. See [[E40-quill-overlay-shipping]].
+- ✅ `lib.rs` split into `wire.rs` / `state.rs` / `commands.rs`; `overlay.html` split into html + css + js
+- ✅ `scripts/install-dev.sh` for the kill+install+codesign+launch dance
+- ✅ Tests: 5/5 passing (`cargo test --features overlay --lib`)
+- ✅ Brain writeups: `projects/quill.md` + `research-vault/experiments/{E38,E39,E40}-quill-*.md`
 
 ## 🎯 Resume here (on "continue")
 
 **Bare `continue` = run these steps in order, no re-briefing.**
 
-1. Confirm shell still compiles: `cd ~/quill/shell/src-tauri && cargo check` — should finish in <5s on a warm cache.
-2. Ask the user which fork to push on next:
-   - **A) Launch the shell** — install Tauri CLI, run `cargo tauri dev`, smoke-test Harper suggestions in the GUI, then start designing the candle-based LLM inference path.
-   - **B) Kick off fine-tune** — `cd ~/quill/train && uv sync`, accept Gemma license on HF, run `scripts/prep_coedit.py` first, then `scripts/train.py` on a cloud GPU (Modal/Colab L4).
-   - **C) Stretch goal** — replace Gemma 270M with BitNet b1.58 distilled to ~500M for the ~30 MB total bundle. Research-grade detour, real paper potential.
-3. After the user picks, mark the relevant `train/` or `shell/` README's next step as in_progress and execute.
+1. Confirm tests still pass: `cd ~/quill/shell/src-tauri && cargo test --features overlay --lib` — should be 5/5 in <10s warm.
+2. Rebuild and reinstall locally: `./scripts/install-dev.sh --build --tail` — produces a fresh `~/Applications/Quill.app` and streams the relevant `[quill]` / `focus-update` / `cursor-*` / `overlay-js` lines from `/tmp/quill.log`.
+3. Ask the user which v0.4 fork to push on:
+   - **A — Per-app coverage matrix (E41a)**: Test in 20 common apps; document which expose `kAXBoundsForRangeParameterizedAttribute` vs which need the fallback panel. Builds the "compatible apps" data and is mostly observation, no new code.
+   - **B — Clipboard write-back fallback (E41b)**: When `kAXSelectedTextAttribute` set fails (Safari, Chrome, Electron), simulate ⌘C → mutate clipboard → ⌘V via `CGEventPost`. Recovers click-to-fix in the ~50% of apps where AXUI write-back silently no-ops.
+   - **C — Menubar mode (E41c)**: Drop the dock icon, replace with a menubar item. Quill becomes ambient — no main window, just the overlay everywhere.
+4. After the user picks, mark a new `~/brain/research-vault/experiments/E41-...md` and execute.
 
 ## Known gaps / next concrete tasks
 

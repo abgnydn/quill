@@ -1,0 +1,274 @@
+/* Quill overlay — pulled out of overlay.html for easier iteration.
+   Color tokens, typography and motion live here only. */
+
+:root {
+  --bg-popover: rgba(20, 22, 30, 0.92);
+  --border: rgba(124, 156, 255, 0.22);
+  --accent: #7c9cff;
+  --accent-2: #5a7cff;
+  --fg: #f0f2f8;
+  --fg-dim: #8b93a7;
+  --fg-mute: #5d647a;
+  --spell: #ff6b6b;
+  --agree: #7c9cff;
+  --style: #ffb86b;
+  --bg-row: #1c1f2a;
+  --bg-chip: #2a3046;
+  --bg-chip-h: linear-gradient(135deg, var(--accent), var(--accent-2));
+  --radius-pop: 12px;
+  --radius-chip: 6px;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  background: transparent;
+  overflow: hidden;
+  pointer-events: none;
+  font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* === SVG-backed wavy underlines (crisper than CSS gradients) =============== */
+.underline {
+  position: absolute;
+  pointer-events: auto;
+  cursor: pointer;
+  background-repeat: repeat-x;
+  background-position: bottom left;
+  background-size: 8px 4px;
+  transition: filter 0.12s ease, transform 0.12s ease;
+}
+.underline:hover, .underline.active {
+  filter: brightness(1.25) drop-shadow(0 0 5px currentColor);
+}
+.underline.spelling {
+  /* zig-zag SVG fill */
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'><path d='M0 3 Q 2 0 4 3 T 8 3' stroke='%23ff6b6b' stroke-width='1.4' fill='none'/></svg>");
+}
+.underline.agreement {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'><path d='M0 3 Q 2 0 4 3 T 8 3' stroke='%237c9cff' stroke-width='1.4' fill='none'/></svg>");
+}
+.underline.style, .underline.misc {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'><path d='M0 3 Q 2 0 4 3 T 8 3' stroke='%23ffb86b' stroke-width='1.4' fill='none'/></svg>");
+}
+
+/* === Compact hover popover =============================================== */
+#popover {
+  position: absolute;
+  pointer-events: auto;
+  display: none;
+  width: 280px;
+  background: var(--bg-popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pop);
+  padding: 10px 12px 11px;
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.6),
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  z-index: 100;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transition: opacity 0.14s ease, transform 0.14s cubic-bezier(.2,.8,.2,1);
+}
+#popover.visible {
+  display: block;
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.pop-kind {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 700;
+  margin-bottom: 6px;
+  color: var(--fg-dim);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.pop-kind.spelling { color: var(--spell); }
+.pop-kind.agreement { color: var(--agree); }
+.pop-kind.style, .pop-kind.misc { color: var(--style); }
+.pop-target {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  color: var(--fg);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.pop-msg {
+  font-size: 12.5px;
+  line-height: 1.45;
+  margin-bottom: 9px;
+  color: var(--fg);
+}
+
+.pop-suggs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sugg {
+  background: var(--bg-chip);
+  color: var(--fg);
+  border: none;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  border-radius: var(--radius-chip);
+  font-family: ui-monospace, monospace;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, transform 0.1s;
+}
+.sugg:hover {
+  background: var(--bg-chip-h);
+  color: #0f1115;
+  transform: translateY(-1px);
+}
+.sugg:active { transform: translateY(0); }
+.sugg.remove { font-style: italic; opacity: 0.85; }
+.sugg.applied {
+  background: #2d3f2a;
+  color: #7ee787;
+  pointer-events: none;
+}
+.sugg.applied::after { content: " ✓"; font-weight: 700; }
+
+.pop-ai {
+  margin-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pop-ai-label {
+  font-size: 10.5px;
+  color: var(--fg-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ai-btn {
+  background: var(--bg-chip-h);
+  color: #0f1115;
+  border: none;
+  padding: 4.5px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+  letter-spacing: 0.03em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.ai-btn:hover { filter: brightness(1.08); }
+.ai-btn:disabled { opacity: 0.6; cursor: progress; }
+.spinner {
+  width: 10px; height: 10px;
+  border: 1.5px solid rgba(15, 17, 21, 0.3);
+  border-top-color: #0f1115;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.ai-out {
+  margin-top: 8px;
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  background: rgba(0, 0, 0, 0.32);
+  padding: 8px 10px;
+  border-radius: 6px;
+  word-wrap: break-word;
+  display: none;
+  border-left: 2px solid var(--accent);
+}
+.ai-out.visible { display: block; }
+.ai-out .row {
+  margin-top: 7px;
+  display: flex;
+  gap: 4px;
+}
+
+/* === Fallback summary panel (when AXUI doesn't give per-word rects) ====== */
+#fallback {
+  position: absolute;
+  pointer-events: auto;
+  display: none;
+  width: 300px;
+  background: var(--bg-popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pop);
+  padding: 10px 12px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  z-index: 90;
+}
+#fallback.visible { display: block; }
+.fb-header {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+  font-weight: 800;
+  margin-bottom: 7px;
+}
+.fb-header::before { content: "✎  "; }
+.fb-row {
+  background: var(--bg-row);
+  border-radius: 6px;
+  padding: 6px 9px;
+  margin-bottom: 5px;
+  border-left: 3px solid var(--style);
+}
+.fb-row:last-child { margin-bottom: 0; }
+.fb-row.spelling { border-left-color: var(--spell); }
+.fb-row.agreement { border-left-color: var(--agree); }
+.fb-msg { font-size: 12px; margin-bottom: 4px; }
+.fb-msg b {
+  font-family: ui-monospace, monospace;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+.fb-suggs { display: flex; flex-wrap: wrap; gap: 3px; }
+
+/* === Corner status badge ================================================ */
+#corner {
+  position: fixed;
+  top: 14px;
+  left: 14px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(20, 22, 30, 0.82);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  pointer-events: none;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+  z-index: 10000;
+  opacity: 0.85;
+  transition: opacity 0.5s ease;
+}
+#corner.idle { opacity: 0.2; }
+#corner.hot  { opacity: 1; }

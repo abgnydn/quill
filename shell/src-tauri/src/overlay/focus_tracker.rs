@@ -63,7 +63,7 @@ mod tests {
 #[derive(Serialize, Clone, Debug)]
 pub struct PositionedLint {
     #[serde(flatten)]
-    pub lint: crate::WireLint,
+    pub lint: crate::wire::WireLint,
     pub rect: Option<FocusBounds>,
 }
 
@@ -144,8 +144,8 @@ fn run(app: AppHandle) {
 
         // Lint the text if we got any. Harper takes ~5-30ms per check on
         // typical sentence-length input.
-        let raw_lints: Vec<crate::WireLint> = match &text {
-            Some(t) if !t.is_empty() => crate::check_text_with(&mut linter, t),
+        let raw_lints: Vec<crate::wire::WireLint> = match &text {
+            Some(t) if !t.is_empty() => crate::wire::check_text_with(&mut linter, t),
             _ => Vec::new(),
         };
 
@@ -168,13 +168,16 @@ fn run(app: AppHandle) {
             unsafe { CFRelease(elem_ref as core_foundation::base::CFTypeRef) };
         }
 
+        let rects_resolved = lints.iter().filter(|l| l.rect.is_some()).count();
         eprintln!(
-            "[quill] focus-update: bounds={} text_len={} lints={}",
+            "[quill] focus-update: bounds={} text_len={} lints={} rects={}/{}",
             bounds
                 .as_ref()
                 .map(|b| format!("x={:.0} y={:.0} w={:.0} h={:.0}", b.x, b.y, b.w, b.h))
                 .unwrap_or_else(|| "<none>".into()),
             text.as_deref().map(|t| t.chars().count()).unwrap_or(0),
+            lints.len(),
+            rects_resolved,
             lints.len()
         );
 
