@@ -21,6 +21,7 @@ pub fn capabilities(state: State<'_, RewriteState>) -> Capabilities {
     Capabilities {
         llm_built: cfg!(feature = "llm"),
         model_loaded: state.is_loaded(),
+        personal_adapter_loaded: state.has_personal_adapter(),
     }
 }
 

@@ -27,7 +27,7 @@ async function probeCapabilities() {
     const c = await invoke("capabilities");
     let label = "harper-only";
     if (c.llm_built && c.model_loaded) {
-      label = "harper + llm";
+      label = c.personal_adapter_loaded ? "harper + llm + personal" : "harper + llm";
       rewriteBtn.disabled = false;
       rewriteHint.textContent = "";
     } else if (c.llm_built && !c.model_loaded) {
@@ -37,6 +37,16 @@ async function probeCapabilities() {
       rewriteHint.textContent = "rebuild with --features llm to enable";
     }
     caps.textContent = label;
+    // Pill in the personalization panel reflects the same state.
+    if (personalPill) {
+      if (c.personal_adapter_loaded) {
+        personalPill.textContent = "personal";
+        personalPill.className = "pill pill-personal";
+      } else {
+        personalPill.textContent = "base only";
+        personalPill.className = "pill pill-base";
+      }
+    }
   } catch (e) {
     caps.textContent = `caps error: ${e}`;
   }
@@ -208,6 +218,7 @@ const personalRewrite = document.getElementById("personal-rewrite");
 const personalRange = document.getElementById("personal-range");
 const personalExport = document.getElementById("personal-export");
 const personalClear = document.getElementById("personal-clear");
+const personalPill = document.getElementById("personal-pill");
 
 function fmtTs(t) {
   if (!t) return "—";

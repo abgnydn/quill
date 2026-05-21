@@ -29,6 +29,8 @@ pub struct WireLint {
 pub struct Capabilities {
     pub llm_built: bool,
     pub model_loaded: bool,
+    /// True when a personal LoRA adapter is loaded on top of the base.
+    pub personal_adapter_loaded: bool,
 }
 
 fn wire_lints_from<I: IntoIterator<Item = harper_core::linting::Lint>>(lints: I) -> Vec<WireLint> {

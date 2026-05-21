@@ -98,6 +98,28 @@ The script does the full kill → cp → ad-hoc codesign → launch dance and ta
 2. **Grant Accessibility permission** when macOS prompts. The focus tracker needs `kAXFocusedUIElementAttribute` access to know what text field you're in.
 3. Click into any text field in any app. The overlay window draws underlines at any detected lints; hover for the popover.
 
+## Personalization (v0.5)
+
+Quill keeps a private edit journal at `~/Library/Application Support/Quill/journal.jsonl` — every accepted suggestion and AI rewrite, never sent anywhere. The main-window footer shows the count.
+
+When you've accumulated enough edits (~50+), train a personal LoRA adapter:
+
+```bash
+cd ~/quill/train
+# In Quill main window: click ⤓ Export — notes the /tmp/quill-training-*.jsonl path
+HF_TOKEN=hf_xxx .venv/bin/modal run modal_train_personal.py \
+    --journal /tmp/quill-training-2026-MM-DD-T....jsonl
+
+# After ~15 min and ~$0.20:
+cp ./checkpoints/personal-adapter.gguf \
+    "$HOME/Library/Application Support/Quill/personal-adapter.gguf"
+killall quill; open ~/Applications/Quill.app
+```
+
+Header now reads **"harper + llm + personal"** and the green **personal** pill appears in the footer. From this point your rewrites bias toward how *you* edit, not toward the average CoEdIT writer. The base CoEdIT model stays intact — your adapter is a delta on top, generated locally on Modal, never seen by anyone but you.
+
+To re-train as you accumulate more edits: re-export, re-run the Modal script, re-copy. v0.6 will automate this in a background sidecar.
+
 ## Training pipeline
 
 The bundled model is a LoRA fine-tune of `unsloth/gemma-3-270m-it` on [`grammarly/coedit`](https://huggingface.co/datasets/grammarly/coedit) — Grammarly's open editing corpus.

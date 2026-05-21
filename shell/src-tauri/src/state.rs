@@ -36,8 +36,18 @@ pub struct RewriteState {
 #[cfg(feature = "llm")]
 impl RewriteState {
     pub fn from_path(path: Option<std::path::PathBuf>) -> Self {
+        Self::from_paths(path, personal_adapter_path())
+    }
+
+    /// Load the base model and optionally a personal LoRA adapter on top.
+    /// `adapter_path` is only used when it exists on disk.
+    pub fn from_paths(
+        path: Option<std::path::PathBuf>,
+        adapter_path: Option<std::path::PathBuf>,
+    ) -> Self {
+        let adapter = adapter_path.filter(|p| p.exists());
         let engine = match path {
-            Some(p) if p.exists() => match inference::RewriteEngine::load(&p) {
+            Some(p) if p.exists() => match inference::RewriteEngine::load_with_adapter(&p, adapter.as_ref()) {
                 Ok(e) => {
                     eprintln!("[quill] loaded model from {}", p.display());
                     Some(e)
@@ -66,6 +76,13 @@ impl RewriteState {
     pub fn is_loaded(&self) -> bool {
         self.engine.lock().map(|g| g.is_some()).unwrap_or(false)
     }
+
+    pub fn has_personal_adapter(&self) -> bool {
+        self.engine
+            .lock()
+            .map(|g| g.as_ref().map(|e| e.has_adapter()).unwrap_or(false))
+            .unwrap_or(false)
+    }
 }
 
 #[cfg(not(feature = "llm"))]
@@ -78,6 +95,10 @@ impl RewriteState {
     }
 
     pub fn is_loaded(&self) -> bool {
+        false
+    }
+
+    pub fn has_personal_adapter(&self) -> bool {
         false
     }
 }
@@ -95,4 +116,15 @@ pub fn resolve_model_path(app: &tauri::App) -> Option<std::path::PathBuf> {
             tauri::path::BaseDirectory::Resource,
         )
         .ok()
+}
+
+/// Where Quill looks for an optional personal LoRA adapter on startup.
+/// `~/Library/Application Support/Quill/personal-adapter.gguf` — same
+/// directory as the journal so all per-user state is co-located.
+pub fn personal_adapter_path() -> Option<std::path::PathBuf> {
+    let home = std::env::var_os("HOME")?;
+    let mut p = std::path::PathBuf::from(home);
+    p.push("Library/Application Support/Quill");
+    p.push("personal-adapter.gguf");
+    Some(p)
 }

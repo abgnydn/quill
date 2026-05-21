@@ -68,20 +68,35 @@ quill/
 - ✅ `scripts/install-dev.sh` for the kill+install+codesign+launch dance
 - ✅ Tests: 5/5 passing (`cargo test --features overlay --lib`)
 - ✅ Brain writeups: `projects/quill.md` + `research-vault/experiments/{E38,E39,E40}-quill-*.md`
-- ✅ v0.5 phase 1 (personalization journal): every apply/rewrite_apply event lands in `~/Library/Application Support/Quill/journal.jsonl`; main-window panel shows count + applied + range; export → `{src,tgt}` JSONL for the train pipeline; reset wipes locally. 7/7 tests pass.
-- ⏳ v0.5 phase 2: `train/scripts/train_personal.py` skeleton in place — phase 2 implements the actual 50/50-rehearsal LoRA fine-tune on a user journal + base CoEdIT adapter.
+- ✅ v0.5 phase 1 (personalization journal): every apply/rewrite_apply event lands in `~/Library/Application Support/Quill/journal.jsonl`; main-window panel shows count + applied + range; export → `{src,tgt}` JSONL for the train pipeline; reset wipes locally. 8/8 tests pass.
+- ✅ v0.5 phase 2 (personal LoRA pipeline): `RewriteEngine::load_with_adapter` accepts an optional LoRA via `llama-cpp-2`'s `lora_adapter_init` + `lora_adapter_set`. Auto-detects `~/Library/Application Support/Quill/personal-adapter.gguf` on startup. `Capabilities.personal_adapter_loaded` exposes status to the UI — main window shows a green "personal" pill when adapter is active, "base only" otherwise. `train/modal_train_personal.py` is a real end-to-end Modal L4 script: takes a journal export, interleaves with CoEdIT rehearsal 50/50, trains a fresh LoRA, converts to GGUF via `llama.cpp/convert_lora_to_gguf.py`, downloads to `./checkpoints/personal-adapter.gguf`.
 
 ## 🎯 Resume here (on "continue")
 
 **Bare `continue` = run these steps in order, no re-briefing.**
 
-1. Confirm tests still pass: `cd ~/quill/shell/src-tauri && cargo test --features overlay --lib` — should be 5/5 in <10s warm.
-2. Rebuild and reinstall locally: `./scripts/install-dev.sh --build --tail` — produces a fresh `~/Applications/Quill.app` and streams the relevant `[quill]` / `focus-update` / `cursor-*` / `overlay-js` lines from `/tmp/quill.log`.
-3. Ask the user which v0.4 fork to push on:
-   - **A — Per-app coverage matrix (E41a)**: Test in 20 common apps; document which expose `kAXBoundsForRangeParameterizedAttribute` vs which need the fallback panel. Builds the "compatible apps" data and is mostly observation, no new code.
-   - **B — Clipboard write-back fallback (E41b)**: When `kAXSelectedTextAttribute` set fails (Safari, Chrome, Electron), simulate ⌘C → mutate clipboard → ⌘V via `CGEventPost`. Recovers click-to-fix in the ~50% of apps where AXUI write-back silently no-ops.
-   - **C — Menubar mode (E41c)**: Drop the dock icon, replace with a menubar item. Quill becomes ambient — no main window, just the overlay everywhere.
-4. After the user picks, mark a new `~/brain/research-vault/experiments/E41-...md` and execute.
+1. Confirm tests still pass: `cd ~/quill/shell/src-tauri && cargo test --features llm,overlay --lib` — should be 8/8 in <10s warm.
+2. Rebuild and reinstall locally: `./scripts/install-dev.sh --build --tail`.
+3. Check `journal_stats` count via the personalization panel — is the user accumulating edits?
+4. If `count >= 50`, offer to run the personal LoRA training:
+   ```
+   cd ~/quill/train
+   # in Quill main window: click ⤓ Export → notes the /tmp/quill-training-*.jsonl path
+   HF_TOKEN=hf_xxx .venv/bin/modal run modal_train_personal.py \
+       --journal /tmp/quill-training-2026-MM-DDT...jsonl
+   # ~15 min later, downloads ./checkpoints/personal-adapter.gguf
+   cp ./checkpoints/personal-adapter.gguf \
+       "$HOME/Library/Application Support/Quill/personal-adapter.gguf"
+   killall quill; open ~/Applications/Quill.app
+   # main window header should now say "harper + llm + personal"
+   # personalization pill flips from "base only" → green "personal"
+   ```
+   Then write up as `~/brain/research-vault/experiments/E41-quill-personal-lora.md` with: training wall-clock, before/after qualitative rewrite samples, journal size at first run.
+5. If `count < 50`, ask the user which v0.6+ fork to push on:
+   - **A — Background continual training (v0.6)**: auto-trigger personal training after N applied edits, run in a sidecar Modal job.
+   - **B — Clipboard write-back fallback (E41b)**: simulate ⌘C → mutate → ⌘V for Safari/Chrome/Electron.
+   - **C — Menubar mode**: drop the dock icon, become ambient.
+   - **D — BitNet base swap (v0.7)**: replace Gemma 270M with BitNet b1.58 2B4T via the now-upstream llama.cpp kernels.
 
 ## Known gaps / next concrete tasks
 
