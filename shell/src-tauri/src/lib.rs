@@ -12,6 +12,7 @@ use tauri::Manager;
 pub mod commands;
 pub mod journal;
 pub mod state;
+pub mod training;
 pub mod wire;
 
 #[cfg(feature = "llm")]
@@ -40,6 +41,8 @@ pub fn run() {
                 Err(e) => eprintln!("[quill] journal open failed: {e}"),
             }
 
+            app.manage(std::sync::Arc::new(training::TrainingState::default()));
+
             #[cfg(all(target_os = "macos", feature = "overlay"))]
             {
                 if let Err(e) = overlay::window::create(&app.handle()) {
@@ -64,6 +67,10 @@ pub fn run() {
             commands::journal_stats,
             commands::journal_export,
             commands::journal_clear,
+            commands::train_personal_start,
+            commands::train_personal_status,
+            commands::train_personal_install,
+            commands::train_personal_reset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

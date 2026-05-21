@@ -158,6 +158,54 @@ pub fn journal_clear(journal: State<'_, Arc<Journal>>) -> Result<u64, String> {
     journal.clear().map_err(|e| e.to_string())
 }
 
+use crate::training::{SharedTraining, TrainingStatus};
+
+#[tauri::command]
+pub fn train_personal_start(
+    journal: State<'_, Arc<Journal>>,
+    training: State<'_, SharedTraining>,
+) -> Result<TrainingStatus, String> {
+    // 1. Export the current journal to a fresh temp file.
+    let tmp = std::env::temp_dir().join(format!(
+        "quill-training-{}.jsonl",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    ));
+    let n = journal.export_training_pairs(&tmp).map_err(|e| e.to_string())?;
+    if n < 10 {
+        return Err(format!(
+            "only {n} applied edits in the journal — need ≥10 before training is useful"
+        ));
+    }
+    eprintln!("[quill][train] exported {n} pairs to {}", tmp.display());
+
+    training.start(tmp).map_err(|e| e.to_string())?;
+    Ok(training.status())
+}
+
+#[tauri::command]
+pub fn train_personal_status(training: State<'_, SharedTraining>) -> TrainingStatus {
+    training.status()
+}
+
+/// Copy a successfully-produced adapter into Quill's Application Support
+/// dir. Quill auto-loads it on next launch.
+#[tauri::command]
+pub fn train_personal_install(training: State<'_, SharedTraining>) -> Result<String, String> {
+    let dest = crate::state::personal_adapter_path()
+        .ok_or_else(|| "HOME not resolvable".to_string())?;
+    let bytes = training.install(&dest)?;
+    eprintln!("[quill][train] installed {bytes}B → {}", dest.display());
+    Ok(dest.display().to_string())
+}
+
+#[tauri::command]
+pub fn train_personal_reset(training: State<'_, SharedTraining>) {
+    training.reset();
+}
+
 #[tauri::command]
 pub fn rewrite(
     text: &str,

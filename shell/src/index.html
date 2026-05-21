@@ -53,8 +53,21 @@
           </div>
         </div>
         <div class="personal-actions">
+          <button id="personal-train" title="Run the Modal training job + auto-install the adapter" disabled>↻ Train</button>
           <button id="personal-export" title="Export as JSONL for the train pipeline">⤓ Export</button>
           <button id="personal-clear" title="Wipe the journal" class="danger">⌫ Reset</button>
+        </div>
+      </div>
+      <div id="train-modal" class="train-modal hidden">
+        <div class="train-card">
+          <div class="train-state" id="train-state">starting…</div>
+          <div class="train-elapsed" id="train-elapsed"></div>
+          <div class="train-stage" id="train-stage"></div>
+          <div class="train-error" id="train-error"></div>
+          <div class="train-actions">
+            <button id="train-install" class="primary hidden">✓ Install + relaunch</button>
+            <button id="train-dismiss">Close</button>
+          </div>
         </div>
       </div>
       <div class="personal-note">

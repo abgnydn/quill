@@ -218,7 +218,16 @@ const personalRewrite = document.getElementById("personal-rewrite");
 const personalRange = document.getElementById("personal-range");
 const personalExport = document.getElementById("personal-export");
 const personalClear = document.getElementById("personal-clear");
+const personalTrain = document.getElementById("personal-train");
 const personalPill = document.getElementById("personal-pill");
+
+const trainModal = document.getElementById("train-modal");
+const trainState = document.getElementById("train-state");
+const trainElapsed = document.getElementById("train-elapsed");
+const trainStage = document.getElementById("train-stage");
+const trainError = document.getElementById("train-error");
+const trainInstall = document.getElementById("train-install");
+const trainDismiss = document.getElementById("train-dismiss");
 
 function fmtTs(t) {
   if (!t) return "—";
@@ -238,6 +247,14 @@ async function refreshPersonal() {
           : `${fmtTs(s.oldest_ts)} → ${fmtTs(s.newest_ts)}`;
     } else {
       personalRange.textContent = "no events yet";
+    }
+    // Enable Train button only when there's enough data.
+    if (personalTrain) {
+      const enough = (s.applied || 0) + (s.rewrite_applied || 0) >= 10;
+      personalTrain.disabled = !enough;
+      personalTrain.title = enough
+        ? "Train a personal LoRA adapter on Modal (~15 min, ~$0.20)"
+        : `Need ≥10 applied edits to train (have ${(s.applied||0)+(s.rewrite_applied||0)})`;
     }
   } catch (e) {
     // journal not available — fail quiet
@@ -269,6 +286,84 @@ personalClear.addEventListener("click", async () => {
   } catch (e) {
     personalClear.textContent = `error: ${e}`;
   }
+});
+
+// ---- Personal training (v0.5 phase 3) ----------------------------------
+let trainPollTimer = null;
+const STATE_LABEL = {
+  idle: "idle",
+  running: "training in progress…",
+  succeeded: "✓ training complete",
+  failed: "training failed",
+};
+
+function fmtElapsed(s) {
+  if (!s) return "";
+  const sec = Math.floor(s);
+  const m = Math.floor(sec / 60);
+  return m > 0 ? `${m}m ${sec % 60}s elapsed` : `${sec}s elapsed`;
+}
+
+function renderTrainStatus(st) {
+  trainState.textContent = STATE_LABEL[st.state] || st.state;
+  trainElapsed.textContent = fmtElapsed(st.elapsed_secs);
+  trainStage.textContent = st.stage || "";
+  trainError.textContent = st.error || "";
+  if (st.state === "succeeded") {
+    trainInstall.classList.remove("hidden");
+  } else {
+    trainInstall.classList.add("hidden");
+  }
+}
+
+async function pollTrainOnce() {
+  try {
+    const st = await invoke("train_personal_status");
+    renderTrainStatus(st);
+    if (st.state === "succeeded" || st.state === "failed") {
+      clearInterval(trainPollTimer);
+      trainPollTimer = null;
+    }
+  } catch (e) {
+    trainError.textContent = String(e);
+  }
+}
+
+personalTrain.addEventListener("click", async () => {
+  trainModal.classList.remove("hidden");
+  trainError.textContent = "";
+  trainStage.textContent = "";
+  trainState.textContent = "starting…";
+  try {
+    const st = await invoke("train_personal_start");
+    renderTrainStatus(st);
+    if (trainPollTimer) clearInterval(trainPollTimer);
+    trainPollTimer = setInterval(pollTrainOnce, 3000);
+  } catch (e) {
+    trainState.textContent = "failed to start";
+    trainError.textContent = String(e);
+  }
+});
+
+trainInstall.addEventListener("click", async () => {
+  try {
+    const dest = await invoke("train_personal_install");
+    trainStage.textContent = `installed → ${dest}\nQuit and relaunch Quill to load the adapter.`;
+    trainInstall.disabled = true;
+    trainInstall.textContent = "✓ Installed — relaunch Quill";
+  } catch (e) {
+    trainError.textContent = String(e);
+  }
+});
+
+trainDismiss.addEventListener("click", () => {
+  trainModal.classList.add("hidden");
+  if (trainPollTimer) {
+    clearInterval(trainPollTimer);
+    trainPollTimer = null;
+  }
+  // Don't reset the actual job — user can re-open via "Train" while it's
+  // still running. They can also explicitly reset via the menu (future).
 });
 
 probeCapabilities();
