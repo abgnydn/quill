@@ -210,26 +210,65 @@ pub fn train_personal_reset(training: State<'_, SharedTraining>) {
 pub fn rewrite(
     text: &str,
     instruction: Option<String>,
+    session: Option<String>,
     state: State<'_, RewriteState>,
+    app: tauri::AppHandle,
 ) -> Result<String, String> {
     #[cfg(feature = "llm")]
     {
+        use tauri::Emitter;
+        let session = session.unwrap_or_else(|| "default".into());
         let lock = state
             .engine
             .lock()
             .map_err(|e| format!("engine mutex poisoned: {e}"))?;
         match &*lock {
-            Some(engine) => engine
-                .rewrite(text, instruction.as_deref())
-                .map_err(|e| format!("{e:#}")),
-            None => {
-                Err("no model loaded — set QUILL_MODEL=<path-to.gguf> before launching".into())
+            Some(engine) => {
+                let app_clone = app.clone();
+                let session_for_cb = session.clone();
+                let result = engine
+                    .rewrite_streaming(text, instruction.as_deref(), move |delta| {
+                        // Best-effort emit; if the overlay isn't subscribed we
+                        // just keep generating tokens.
+                        let _ = app_clone.emit_to(
+                            "overlay",
+                            "rewrite-token",
+                            serde_json::json!({
+                                "session": session_for_cb,
+                                "delta": delta,
+                                "done": false,
+                            }),
+                        );
+                        // Also broadcast to the main window for its rewrite panel.
+                        let _ = app_clone.emit(
+                            "rewrite-token",
+                            serde_json::json!({
+                                "session": session_for_cb,
+                                "delta": delta,
+                                "done": false,
+                            }),
+                        );
+                    })
+                    .map_err(|e| format!("{e:#}"))?;
+                let _ = app.emit_to(
+                    "overlay",
+                    "rewrite-token",
+                    serde_json::json!({"session": session, "delta": "", "done": true}),
+                );
+                let _ = app.emit(
+                    "rewrite-token",
+                    serde_json::json!({"session": session, "delta": "", "done": true}),
+                );
+                Ok(result)
             }
+            None => Err(
+                "no model loaded — set QUILL_MODEL=<path-to.gguf> before launching".into(),
+            ),
         }
     }
     #[cfg(not(feature = "llm"))]
     {
-        let _ = (text, instruction, state);
+        let _ = (text, instruction, session, state, app);
         Err("rewrite not available — build with --features llm".into())
     }
 }

@@ -211,21 +211,50 @@
     applySuggestion(parseInt(t.dataset.lint, 10), parseInt(t.dataset.sugg, 10), t);
   });
 
-  // ---- AI rewrite -----------------------------------------------------
+  // ---- AI rewrite (streamed) -----------------------------------------
+  function makeSession() {
+    return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
+  }
+
   aiBtn.addEventListener("click", async () => {
     if (!currentText) return;
     aiBtn.disabled = true;
-    aiBtnLabel.textContent = "thinking";
+    aiBtnLabel.textContent = "streaming";
     aiBtnSpinner.style.display = "inline-block";
     aiOut.classList.add("visible");
-    aiText.textContent = "thinking…";
+    aiText.textContent = "";
+    aiText.classList.add("streaming");
+
+    const session = makeSession();
+    const unlisten = await listen("rewrite-token", (evt) => {
+      const p = evt.payload || {};
+      if (p.session !== session) return;
+      if (p.done) {
+        aiText.classList.remove("streaming");
+        return;
+      }
+      if (p.delta) {
+        aiText.textContent += p.delta;
+        requestAnimationFrame(pushHotRegions);
+      }
+    });
+
     try {
-      const out = await invoke("rewrite", { text: currentText, instruction: null });
+      const out = await invoke("rewrite", {
+        text: currentText, instruction: null, session,
+      });
       lastRewrite = String(out || "");
-      aiText.textContent = lastRewrite;
+      if (!aiText.textContent) aiText.textContent = lastRewrite;
+      // Once streaming completes, replace raw text with inline diff so the
+      // user can SEE what changed instead of having to mentally compare.
+      if (currentText && lastRewrite && currentText !== lastRewrite) {
+        aiText.innerHTML = renderDiffHtml(currentText, lastRewrite);
+      }
     } catch (err) {
       aiText.textContent = "error: " + String(err);
     } finally {
+      unlisten();
+      aiText.classList.remove("streaming");
       aiBtn.disabled = false;
       aiBtnLabel.textContent = "Rewrite with AI";
       aiBtnSpinner.style.display = "none";

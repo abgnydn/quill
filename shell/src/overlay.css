@@ -197,6 +197,31 @@ html, body {
   display: none;
   border-left: 2px solid var(--accent);
 }
+.ai-out.streaming::after {
+  content: "▍";
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--accent);
+  animation: caret-blink 0.7s steps(2) infinite;
+}
+@keyframes caret-blink { to { opacity: 0; } }
+
+/* Inline diff styling for the AI output. */
+.ai-out del {
+  background: rgba(255, 107, 107, 0.18);
+  color: #ff9a9a;
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 107, 107, 0.7);
+  padding: 0 2px;
+  border-radius: 3px;
+}
+.ai-out ins {
+  background: rgba(126, 231, 135, 0.18);
+  color: #b5f0bb;
+  text-decoration: none;
+  padding: 0 2px;
+  border-radius: 3px;
+}
 .ai-out.visible { display: block; }
 .ai-out .row {
   margin-top: 7px;

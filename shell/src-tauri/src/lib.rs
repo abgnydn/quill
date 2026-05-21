@@ -25,10 +25,90 @@ pub mod overlay;
 pub use state::{CheckerState, RewriteState};
 pub use wire::{check_text_with, Capabilities, WireLint, WireSuggestion};
 
+/// Global-hotkey handler: grab the user's current selection via simulated
+/// ⌘C, run the LLM rewrite on it, paste the result back via ⌘V. Runs on
+/// a background thread spawned from the plugin handler.
+#[cfg(all(target_os = "macos", feature = "overlay", feature = "llm"))]
+fn run_rewrite_selection(app: tauri::AppHandle) {
+    use tauri::Manager;
+    let selection = match overlay::clipboard::read_selection_via_copy() {
+        Some(s) => s,
+        None => {
+            eprintln!("[quill][hotkey] no selection to rewrite");
+            return;
+        }
+    };
+    eprintln!(
+        "[quill][hotkey] selection={} chars; calling rewrite…",
+        selection.chars().count()
+    );
+
+    let state: tauri::State<'_, RewriteState> = app.state::<RewriteState>();
+    let result = {
+        let lock = match state.engine.lock() {
+            Ok(g) => g,
+            Err(_) => {
+                eprintln!("[quill][hotkey] engine mutex poisoned");
+                return;
+            }
+        };
+        match &*lock {
+            Some(engine) => match engine.rewrite(&selection, None) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!("[quill][hotkey] rewrite failed: {e:#}");
+                    return;
+                }
+            },
+            None => {
+                eprintln!("[quill][hotkey] no model loaded");
+                return;
+            }
+        }
+    };
+    let posted = overlay::clipboard::paste_via_clipboard(&result);
+    eprintln!(
+        "[quill][hotkey] rewrite paste posted={posted} result={} chars",
+        result.chars().count()
+    );
+}
+
+#[cfg(not(all(target_os = "macos", feature = "overlay", feature = "llm")))]
+fn run_rewrite_selection(_app: tauri::AppHandle) {
+    eprintln!("[quill][hotkey] requires both 'overlay' and 'llm' features");
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+    let rewrite_shortcut = Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyR);
+
     tauri::Builder::default()
-        .setup(|app| {
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler({
+                    let trigger = rewrite_shortcut;
+                    move |app, shortcut, event| {
+                        if event.state() != ShortcutState::Pressed {
+                            return;
+                        }
+                        if shortcut != &trigger {
+                            return;
+                        }
+                        eprintln!("[quill][hotkey] ⌘⇧R triggered");
+                        let app_handle = app.clone();
+                        std::thread::spawn(move || {
+                            run_rewrite_selection(app_handle);
+                        });
+                    }
+                })
+                .build(),
+        )
+        .setup(move |app| {
+            app.global_shortcut()
+                .register(rewrite_shortcut)
+                .unwrap_or_else(|e| eprintln!("[quill] could not register ⌘⇧R: {e}"));
             app.manage(CheckerState::new());
             let model_path = state::resolve_model_path(app);
             app.manage(RewriteState::from_path(model_path));

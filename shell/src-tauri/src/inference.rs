@@ -98,22 +98,35 @@ impl RewriteEngine {
         self.adapter_path.as_ref()
     }
 
-    /// Run a single-shot rewrite. `text` is the user content; `instruction`
-    /// is an optional editing directive (e.g. "Paraphrase this sentence:").
+    /// Run a single-shot rewrite. Convenience wrapper that buffers tokens
+    /// from `rewrite_streaming` into a single String. Use the streaming
+    /// variant when you want per-token UI updates.
     pub fn rewrite(&self, text: &str, instruction: Option<&str>) -> Result<String> {
+        self.rewrite_streaming(text, instruction, |_| {})
+    }
+
+    /// Streaming rewrite. `on_token` is invoked with each piece of newly
+    /// generated text as it's decoded; the same accumulated text is also
+    /// returned at the end (with `<end_of_turn>` stripped). Callbacks are
+    /// invoked from the calling thread, in order, synchronously.
+    pub fn rewrite_streaming<F>(
+        &self,
+        text: &str,
+        instruction: Option<&str>,
+        mut on_token: F,
+    ) -> Result<String>
+    where
+        F: FnMut(&str),
+    {
         let src = format!("{} {}", instruction.unwrap_or(DEFAULT_INSTRUCTION), text);
         let prompt = PROMPT_TEMPLATE.replace("{src}", &src);
 
-        let ctx_params = LlamaContextParams::default()
-            .with_n_ctx(NonZeroU32::new(self.ctx_size));
+        let ctx_params = LlamaContextParams::default().with_n_ctx(NonZeroU32::new(self.ctx_size));
         let mut ctx = self
             .model
             .new_context(&self.backend, ctx_params)
             .context("creating llama context")?;
 
-        // If a personal LoRA adapter is loaded, attach it to this context.
-        // We do this per-context because contexts are short-lived (one per
-        // rewrite) and `lora_adapter_set` is a context-level operation.
         if let Some(adapter_mu) = &self.adapter {
             let mut cell = adapter_mu
                 .lock()
@@ -126,7 +139,6 @@ impl RewriteEngine {
             .model
             .str_to_token(&prompt, AddBos::Always)
             .context("tokenizing prompt")?;
-
         let prompt_len = tokens.len() as i32;
         let n_len = prompt_len + self.max_new_tokens;
         if n_len > ctx.n_ctx() as i32 {
@@ -147,7 +159,6 @@ impl RewriteEngine {
             LlamaSampler::dist(1337),
             LlamaSampler::greedy(),
         ]);
-
         let mut decoder = encoding_rs::UTF_8.new_decoder();
         let mut out = String::new();
         let mut n_cur = batch.n_tokens();
@@ -155,7 +166,6 @@ impl RewriteEngine {
         while n_cur <= n_len {
             let token = sampler.sample(&ctx, batch.n_tokens() - 1);
             sampler.accept(token);
-
             if self.model.is_eog_token(token) {
                 break;
             }
@@ -163,13 +173,11 @@ impl RewriteEngine {
                 .model
                 .token_to_piece(token, &mut decoder, true, None)
                 .context("token_to_piece")?;
-
-            // Gemma's <end_of_turn> is also our stop boundary even if the
-            // model didn't emit a true EOG.
-            if out.ends_with("<end_of_turn>") || piece.contains("<end_of_turn>") {
+            if piece.contains("<end_of_turn>") {
                 break;
             }
             out.push_str(&piece);
+            on_token(&piece);
 
             batch.clear();
             batch.add(token, n_cur, &[0], true)?;
@@ -177,9 +185,6 @@ impl RewriteEngine {
             n_cur += 1;
         }
 
-        Ok(out
-            .replace("<end_of_turn>", "")
-            .trim()
-            .to_string())
+        Ok(out.replace("<end_of_turn>", "").trim().to_string())
     }
 }

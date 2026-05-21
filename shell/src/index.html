@@ -16,10 +16,10 @@
       <section class="editor-pane">
         <textarea
           id="editor"
-          placeholder="Type or paste text. Suggestions appear on the right."
+          placeholder="Write here, or use ⌘⇧R to rewrite the current selection in any app."
           spellcheck="false"
           autofocus
-        >This is an test of the Harper grammer checker. I has a apple.</textarea>
+        ></textarea>
         <div class="actions">
           <button id="rewrite-btn" disabled title="Run the local LLM rewriter on the current text">
             ✎ Rewrite
@@ -36,7 +36,15 @@
         </div>
       </section>
       <aside id="suggestions">
-        <div class="empty">no suggestions yet</div>
+        <div class="empty">
+          <div style="font-size:13px; margin-bottom:6px;">Quill is watching</div>
+          <div style="font-size:11px; color:var(--fg-mute,#5d647a); line-height:1.5;">
+            Type here, or focus any text field in any app —<br>
+            colored underlines + hover popovers appear inline.<br>
+            <kbd style="font-family:ui-monospace,monospace; background:#0c0e14; padding:1px 5px; border-radius:3px;">⌘⇧R</kbd>
+            rewrites the current selection.
+          </div>
+        </div>
       </aside>
     </main>
     <section id="personal">

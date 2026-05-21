@@ -12,6 +12,9 @@
     "core:event:allow-emit-to",
     "core:window:default",
     "core:webview:default",
-    "core:app:default"
+    "core:app:default",
+    "global-shortcut:default",
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister"
   ]
 }

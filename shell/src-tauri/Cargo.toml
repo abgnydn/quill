@@ -34,6 +34,7 @@ overlay = [
 
 [dependencies]
 tauri = { version = "2", features = ["macos-private-api", "test"] }
+tauri-plugin-global-shortcut = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 harper-core = { version = "2", features = ["concurrent"] }

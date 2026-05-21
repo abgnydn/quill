@@ -276,10 +276,13 @@ button:disabled {
   white-space: pre-wrap;
   word-wrap: break-word;
 }
-.rewrite-text.loading::after {
+.rewrite-text.loading::after,
+.rewrite-text.streaming::after {
   content: "▋";
-  animation: blink 0.9s steps(2) infinite;
+  animation: blink 0.7s steps(2) infinite;
   color: var(--accent);
+  display: inline-block;
+  margin-left: 2px;
 }
 @keyframes blink {
   to { opacity: 0; }

@@ -51,6 +51,66 @@ pub fn set_string(s: &str) {
     }
 }
 
+/// Virtual key code for the "C" key on a US ANSI keyboard.
+const KEY_C: CGKeyCode = 0x08;
+
+fn simulate_chord(key: CGKeyCode) -> bool {
+    let src = match CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let down = match CGEvent::new_keyboard_event(src.clone(), key, true) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    down.set_flags(CGEventFlags::CGEventFlagCommand);
+    down.post(CGEventTapLocation::HID);
+    let up = match CGEvent::new_keyboard_event(src, key, false) {
+        Ok(e) => e,
+        Err(_) => return false,
+    };
+    up.set_flags(CGEventFlags::CGEventFlagCommand);
+    up.post(CGEventTapLocation::HID);
+    true
+}
+
+/// Simulate ⌘C in the focused app.
+pub fn simulate_copy() -> bool {
+    simulate_chord(KEY_C)
+}
+
+/// Read the currently-selected text via simulated ⌘C, restoring the
+/// original clipboard afterward. Returns None if no string was selected
+/// (or copy failed). Blocks ~120 ms.
+pub fn read_selection_via_copy() -> Option<String> {
+    let saved = snapshot_string();
+    // Clear so we can tell if the copy produced new content.
+    let pb = NSPasteboard::generalPasteboard();
+    pb.clearContents();
+    if !simulate_copy() {
+        if let Some(s) = saved {
+            set_string(&s);
+        }
+        return None;
+    }
+    thread::sleep(Duration::from_millis(120));
+    let got = snapshot_string();
+    // Restore the original clipboard contents on a separate thread so we
+    // don't block the caller — they want the selection text NOW.
+    let saved_for_restore = saved.clone();
+    thread::spawn(move || {
+        thread::sleep(Duration::from_millis(40));
+        match saved_for_restore {
+            Some(s) if !s.is_empty() => set_string(&s),
+            _ => {
+                let pb = NSPasteboard::generalPasteboard();
+                pb.clearContents();
+            }
+        }
+    });
+    got.filter(|s| !s.is_empty())
+}
+
 /// Synthesize ⌘V at the system event tap so the currently-focused
 /// application receives the paste. Returns false if event creation fails.
 pub fn simulate_paste() -> bool {

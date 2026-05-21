@@ -1,4 +1,5 @@
 const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
 
 const editor = document.getElementById("editor");
 const panel = document.getElementById("suggestions");
@@ -168,19 +169,32 @@ async function runRewrite() {
   rewriteBtn.disabled = true;
   rewriteOutput.classList.remove("hidden");
   rewriteText.textContent = "";
-  rewriteText.classList.add("loading");
+  rewriteText.classList.add("streaming");
+  rewriteHint.textContent = "streaming…";
   const t0 = performance.now();
+
+  const session = (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
+  const unlisten = await listen("rewrite-token", (evt) => {
+    const p = evt.payload || {};
+    if (p.session !== session) return;
+    if (p.done) {
+      rewriteText.classList.remove("streaming");
+      return;
+    }
+    if (p.delta) rewriteText.textContent += p.delta;
+  });
+
   try {
-    const out = await invoke("rewrite", { text, instruction: null });
+    const out = await invoke("rewrite", { text, instruction: null, session });
     const dt = (performance.now() - t0).toFixed(0);
-    rewriteText.classList.remove("loading");
-    rewriteText.textContent = out;
+    if (!rewriteText.textContent) rewriteText.textContent = out;
     rewriteHint.textContent = `${dt} ms`;
   } catch (err) {
-    rewriteText.classList.remove("loading");
     rewriteText.textContent = `error: ${err}`;
     rewriteHint.textContent = "";
   } finally {
+    unlisten();
+    rewriteText.classList.remove("streaming");
     rewriteBtn.disabled = false;
   }
 }
