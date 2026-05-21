@@ -281,4 +281,86 @@ mod tests {
         assert_eq!(back.lint_kind.as_deref(), Some("Agreement"));
         assert_eq!(back.suggested, "have");
     }
+
+    /// Full storage-layer end-to-end:
+    ///   open temp journal → append two events → stats reflects them →
+    ///   export training pairs → read back, assert {src, tgt} schema.
+    /// If the UI counter isn't ticking up, it's NOT the journal — this passes.
+    #[test]
+    fn journal_append_stats_export_roundtrip() {
+        use std::io::{BufRead, BufReader};
+
+        // Use a tempdir so we don't touch ~/Library.
+        let tmp = std::env::temp_dir().join(format!("quill-journal-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let journal_path = tmp.join("journal.jsonl");
+
+        // Hand-build a Journal at our temp path (bypassing default_path()).
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&journal_path)
+            .unwrap();
+        let j = Journal {
+            path: journal_path.clone(),
+            file: std::sync::Mutex::new(file),
+        };
+
+        // Append an Agreement apply and an AI rewrite_apply.
+        j.append(&build_event(
+            "apply",
+            "I has a apple.",
+            Some((2, 5, "Agreement", "verb form")),
+            "have",
+            "I have a apple.",
+        ));
+        j.append(&build_event(
+            "rewrite_apply",
+            "this is a sentence with errors",
+            None,
+            "This is a sentence with errors.",
+            "This is a sentence with errors.",
+        ));
+
+        // Stats reflect both events.
+        let s = j.stats();
+        assert_eq!(s.count, 2, "expected 2 events in journal");
+        assert_eq!(s.applied, 1, "expected 1 apply");
+        assert_eq!(s.rewrite_applied, 1, "expected 1 rewrite_apply");
+        assert!(s.oldest_ts.is_some());
+        assert!(s.newest_ts.is_some());
+
+        // Export → both events yield training pairs.
+        let export_path = tmp.join("export.jsonl");
+        let n = j.export_training_pairs(&export_path).unwrap();
+        assert_eq!(n, 2, "expected 2 exported pairs (both have non-empty applied)");
+
+        // Read back and verify the shape main.js / train_personal.py expects.
+        let exported: Vec<serde_json::Value> = std::io::BufReader::new(
+            std::fs::File::open(&export_path).unwrap(),
+        )
+        .lines()
+        .map_while(Result::ok)
+        .map(|l| serde_json::from_str(&l).unwrap())
+        .collect();
+        assert_eq!(exported.len(), 2);
+        for row in &exported {
+            assert!(row.get("src").is_some(), "exported row missing `src`");
+            assert!(row.get("tgt").is_some(), "exported row missing `tgt`");
+        }
+        // Specifically the AI rewrite path: src is the raw source, tgt is the rewrite.
+        assert_eq!(
+            exported[1].get("tgt").and_then(|v| v.as_str()).unwrap(),
+            "This is a sentence with errors."
+        );
+
+        // Clear wipes the file.
+        let bytes = j.clear().unwrap();
+        assert!(bytes > 0, "clear should report some bytes removed");
+        let s2 = j.stats();
+        assert_eq!(s2.count, 0, "stats should be empty after clear");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
 }

@@ -103,15 +103,35 @@ function render(lints, source) {
 }
 
 function applySuggestion(lint, sugg) {
-  const chars = [...editor.value];
+  const before = editor.value;
+  const chars = [...before];
+  let start = lint.start, end = lint.end;
+  let replacement = sugg.text || "";
   if (sugg.kind === "replace") {
     chars.splice(lint.start, lint.end - lint.start, ...sugg.text);
   } else if (sugg.kind === "insert_after") {
     chars.splice(lint.end, 0, ...sugg.text);
+    start = lint.end; end = lint.end;
   } else if (sugg.kind === "remove") {
     chars.splice(lint.start, lint.end - lint.start);
+    replacement = "";
   }
-  editor.value = chars.join("");
+  const after = chars.join("");
+  editor.value = after;
+  // Record into the personalization journal. Main-window applies mutate
+  // editor.value directly (no AXUI round-trip) so we journal explicitly.
+  invoke("journal_log", {
+    kind: "apply",
+    sourceText: before,
+    appliedText: after,
+    suggested: replacement,
+    lintKind: lint.kind,
+    lintMessage: lint.message,
+    lintStart: start,
+    lintEnd: end,
+  })
+    .then(() => refreshPersonal())
+    .catch(() => {});
   runCheck();
 }
 
@@ -160,9 +180,19 @@ rewriteApply.addEventListener("click", () => {
   const out = rewriteText.textContent;
   if (!out) return;
   const sel = selectedOrAll();
-  editor.value =
+  const before = editor.value;
+  const after =
     editor.value.slice(0, sel.start) + out + editor.value.slice(sel.end);
+  editor.value = after;
   rewriteOutput.classList.add("hidden");
+  invoke("journal_log", {
+    kind: "rewrite_apply",
+    sourceText: before,
+    appliedText: after,
+    suggested: out,
+  })
+    .then(() => refreshPersonal())
+    .catch(() => {});
   runCheck();
 });
 rewriteDismiss.addEventListener("click", () => {

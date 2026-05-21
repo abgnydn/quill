@@ -104,6 +104,40 @@ pub fn apply_suggestion(
     }
 }
 
+/// Record an event without going through AXUI write-back. Used by the
+/// main Quill window — it mutates its own textarea via plain JS and just
+/// wants to be counted in the personalization journal.
+#[tauri::command]
+pub fn journal_log(
+    kind: String,
+    source_text: String,
+    applied_text: String,
+    suggested: Option<String>,
+    lint_kind: Option<String>,
+    lint_message: Option<String>,
+    lint_start: Option<u32>,
+    lint_end: Option<u32>,
+    journal: State<'_, Arc<Journal>>,
+) {
+    let lint = match (
+        lint_start,
+        lint_end,
+        lint_kind.as_deref(),
+        lint_message.as_deref(),
+    ) {
+        (Some(s), Some(e), Some(k), Some(m)) => Some((s, e, k, m)),
+        _ => None,
+    };
+    let evt = journal::build_event(
+        &kind,
+        &source_text,
+        lint,
+        suggested.as_deref().unwrap_or(&applied_text),
+        &applied_text,
+    );
+    journal.append(&evt);
+}
+
 #[tauri::command]
 pub fn journal_stats(journal: State<'_, Arc<Journal>>) -> JournalStats {
     journal.stats()

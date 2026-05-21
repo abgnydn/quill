@@ -60,6 +60,7 @@ pub fn run() {
             commands::overlay_ping,
             commands::apply_suggestion,
             commands::overlay_set_hot_regions,
+            commands::journal_log,
             commands::journal_stats,
             commands::journal_export,
             commands::journal_clear,
