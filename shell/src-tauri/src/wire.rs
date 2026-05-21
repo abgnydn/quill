@@ -71,3 +71,45 @@ pub fn check_text_with(linter: &mut LintGroup, text: &str) -> Vec<WireLint> {
     let document = Document::new_curated(text, &PlainEnglish);
     wire_lints_from(linter.lint(&document))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn capabilities_serializes_personal_field() {
+        let c = Capabilities {
+            llm_built: true,
+            model_loaded: true,
+            personal_adapter_loaded: true,
+        };
+        let s = serde_json::to_string(&c).unwrap();
+        // JS-side reads exactly these field names; protect against drift.
+        assert!(s.contains("\"llm_built\":true"));
+        assert!(s.contains("\"model_loaded\":true"));
+        assert!(
+            s.contains("\"personal_adapter_loaded\":true"),
+            "missing personal_adapter_loaded in wire payload: {s}"
+        );
+    }
+
+    #[test]
+    fn wire_lint_round_trip() {
+        let lint = WireLint {
+            start: 2,
+            end: 5,
+            message: "verb form".into(),
+            kind: "Agreement".into(),
+            priority: 10,
+            suggestions: vec![WireSuggestion {
+                kind: "replace",
+                text: "have".into(),
+            }],
+        };
+        let s = serde_json::to_string(&lint).unwrap();
+        // Field-name contract for the JS overlay.
+        for f in ["start", "end", "message", "kind", "priority", "suggestions"] {
+            assert!(s.contains(&format!("\"{f}\":")), "missing {f}");
+        }
+    }
+}

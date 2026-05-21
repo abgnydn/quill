@@ -128,3 +128,81 @@ pub fn personal_adapter_path() -> Option<std::path::PathBuf> {
     p.push("personal-adapter.gguf");
     Some(p)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn personal_adapter_path_uses_home() {
+        // Save & restore the real HOME so this test doesn't leak.
+        let saved = std::env::var("HOME").ok();
+        // SAFETY: tests are single-threaded by default for env mutation here.
+        unsafe { std::env::set_var("HOME", "/tmp/quill-test-home"); }
+        let got = personal_adapter_path();
+        let expected = std::path::PathBuf::from(
+            "/tmp/quill-test-home/Library/Application Support/Quill/personal-adapter.gguf",
+        );
+        assert_eq!(got, Some(expected));
+        // Restore.
+        unsafe {
+            match saved {
+                Some(v) => std::env::set_var("HOME", v),
+                None => std::env::remove_var("HOME"),
+            }
+        }
+    }
+
+    #[cfg(feature = "llm")]
+    #[test]
+    fn rewrite_state_with_no_model_path_is_not_loaded() {
+        let s = RewriteState::from_paths(None, None);
+        assert!(!s.is_loaded(), "no model path → should not be loaded");
+        assert!(!s.has_personal_adapter());
+    }
+
+    #[cfg(feature = "llm")]
+    #[test]
+    fn rewrite_state_with_missing_model_path_is_not_loaded() {
+        let s = RewriteState::from_paths(
+            Some(std::path::PathBuf::from("/tmp/quill-no-such-model-xyz.gguf")),
+            None,
+        );
+        assert!(!s.is_loaded(), "nonexistent model path → not loaded");
+        assert!(!s.has_personal_adapter());
+    }
+
+    #[cfg(feature = "llm")]
+    #[test]
+    fn rewrite_state_with_missing_adapter_doesnt_break_init() {
+        // No model AND no adapter — verifies the adapter-missing branch
+        // doesn't panic / error out the state constructor.
+        let s = RewriteState::from_paths(
+            None,
+            Some(std::path::PathBuf::from(
+                "/tmp/quill-no-such-adapter-xyz.gguf",
+            )),
+        );
+        assert!(!s.is_loaded());
+        assert!(!s.has_personal_adapter(), "missing adapter file → no personal adapter");
+    }
+
+    /// End-to-end test gated behind QUILL_TEST_MODEL env var. When the user
+    /// has artifacts on disk, `cargo test -- --ignored` exercises the full
+    /// model+adapter load + rewrite path. CI without artifacts skips this.
+    #[cfg(feature = "llm")]
+    #[test]
+    #[ignore]
+    fn full_model_load_and_rewrite_if_artifacts_present() {
+        let Ok(model) = std::env::var("QUILL_TEST_MODEL") else {
+            eprintln!("QUILL_TEST_MODEL not set; skipping");
+            return;
+        };
+        let adapter = std::env::var("QUILL_TEST_ADAPTER").ok().map(std::path::PathBuf::from);
+        let s = RewriteState::from_paths(Some(std::path::PathBuf::from(&model)), adapter.clone());
+        assert!(s.is_loaded(), "model at {model} should load");
+        if adapter.is_some() {
+            assert!(s.has_personal_adapter(), "adapter at {adapter:?} should load");
+        }
+    }
+}

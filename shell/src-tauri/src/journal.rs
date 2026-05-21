@@ -282,6 +282,95 @@ mod tests {
         assert_eq!(back.suggested, "have");
     }
 
+    /// Confirms `journal_log` semantics from the Rust side:
+    /// the same code path the Tauri command takes — build_event +
+    /// append — produces a stats count of N after N calls. This catches
+    /// the "main-window applies don't increment counter" regression we
+    /// hit before journal_log existed.
+    #[test]
+    fn n_logs_yield_n_in_stats() {
+        let tmp = std::env::temp_dir().join(format!("quill-jlog-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let file = std::fs::OpenOptions::new()
+            .create(true).append(true).open(tmp.join("j.jsonl")).unwrap();
+        let j = Journal { path: tmp.join("j.jsonl"), file: std::sync::Mutex::new(file) };
+
+        for i in 0..7 {
+            j.append(&build_event(
+                if i % 2 == 0 { "apply" } else { "rewrite_apply" },
+                "source text",
+                None,
+                "suggested",
+                "applied",
+            ));
+        }
+
+        let s = j.stats();
+        assert_eq!(s.count, 7, "expected 7 logged events");
+        assert_eq!(s.applied, 4);          // i = 0,2,4,6
+        assert_eq!(s.rewrite_applied, 3);  // i = 1,3,5
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Even with no events, stats and export are well-defined (no panic,
+    /// zero counts, zero exported pairs).
+    #[test]
+    fn empty_journal_is_safe() {
+        let tmp = std::env::temp_dir().join(format!("quill-jemp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("j.jsonl");
+        let file = std::fs::OpenOptions::new()
+            .create(true).append(true).open(&path).unwrap();
+        let j = Journal { path: path.clone(), file: std::sync::Mutex::new(file) };
+
+        let s = j.stats();
+        assert_eq!(s.count, 0);
+        assert!(s.oldest_ts.is_none());
+        assert!(s.newest_ts.is_none());
+
+        let out = tmp.join("export.jsonl");
+        let n = j.export_training_pairs(&out).unwrap();
+        assert_eq!(n, 0, "empty journal exports zero pairs");
+
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Exporting only emits events that ACTUALLY succeeded (apply +
+    /// rewrite_apply). Pure dismiss events shouldn't show up as training
+    /// pairs — those are negative signals for v0.6 DPO, not pairs.
+    #[test]
+    fn export_skips_non_applied_events() {
+        let tmp = std::env::temp_dir().join(format!("quill-jexp-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let path = tmp.join("j.jsonl");
+        let file = std::fs::OpenOptions::new()
+            .create(true).append(true).open(&path).unwrap();
+        let j = Journal { path: path.clone(), file: std::sync::Mutex::new(file) };
+
+        j.append(&build_event("apply", "src1", None, "sugg", "applied1"));
+        j.append(&build_event("dismiss", "src2", None, "sugg", ""));
+        j.append(&build_event("rewrite_apply", "src3", None, "sugg", "applied3"));
+        j.append(&build_event("rewrite_dismiss", "src4", None, "sugg", ""));
+
+        let out = tmp.join("export.jsonl");
+        let n = j.export_training_pairs(&out).unwrap();
+        assert_eq!(n, 2, "only the 2 applied events should export");
+
+        // Spot-check the schema once more.
+        use std::io::BufRead;
+        let lines: Vec<String> = std::io::BufReader::new(std::fs::File::open(&out).unwrap())
+            .lines().map_while(Result::ok).collect();
+        assert_eq!(lines.len(), 2);
+        for l in &lines {
+            let v: serde_json::Value = serde_json::from_str(l).unwrap();
+            assert!(v.get("src").is_some() && v.get("tgt").is_some());
+        }
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
     /// Full storage-layer end-to-end:
     ///   open temp journal → append two events → stats reflects them →
     ///   export training pairs → read back, assert {src, tgt} schema.
