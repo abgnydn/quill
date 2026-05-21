@@ -150,20 +150,28 @@ Notes & gotchas (full debug history in [`brain notes`](#brain-writeups)):
 
 ## Per-app compatibility
 
-| App | Inline underlines | Hover popover | Click-to-fix | Notes |
+| App | Inline underlines | Hover popover | Click-to-fix | Strategy |
 |---|:--:|:--:|:--:|---|
-| TextEdit | ✅ | ✅ | ✅ | reference Cocoa target |
-| Notes | ✅ | ✅ | ✅ | |
-| Mail | ✅ | ✅ | ✅ | compose window |
-| Messages | ✅ | ✅ | ✅ | |
-| Slack (native) | ✅ | ✅ | ⚠️ | apply works sometimes |
-| Safari address bar | ✅ | ✅ | ✅ | |
-| Safari/Chrome web inputs | ❌ | fallback panel | ❌ | content-editable doesn't expose `kAXBoundsForRange` |
-| VS Code / Cursor | ❌ | fallback panel | ❌ | Electron tree doesn't expose text editing AXUI |
-| Discord | ❌ | fallback panel | ❌ | Electron |
-| Tauri WKWebView (Quill's own window) | ✅ | ✅ | ✅ | surprising |
+| TextEdit | ✅ | ✅ | ✅ | AXUI text-set |
+| Notes | ✅ | ✅ | ✅ | AXUI text-set |
+| Mail | ✅ | ✅ | ✅ | AXUI text-set |
+| Messages | ✅ | ✅ | ✅ | AXUI text-set |
+| Slack (native) | ✅ | ✅ | ✅ | AXUI text-set, with clipboard fallback |
+| Safari address bar | ✅ | ✅ | ✅ | AXUI text-set |
+| Safari/Chrome web inputs | ❌ | fallback panel | ✅ | **clipboard fallback** |
+| VS Code / Cursor | ❌ | fallback panel | ✅ | **clipboard fallback** |
+| Discord | ❌ | fallback panel | ✅ | **clipboard fallback** |
+| Tauri WKWebView (Quill's own window) | ✅ | ✅ | ✅ | AXUI text-set |
 
-Roughly: native AppKit + native WebKit work; Electron and content-editable inputs land on the fallback summary panel (no inline underlines but the lint list still appears beside the field). Click-to-fix via `kAXSelectedTextAttribute` silently no-ops in those contexts — fix is the clipboard-paste fallback in v0.4.
+How the tiered apply works:
+
+1. **Move the selection** via `kAXSelectedTextRangeAttribute` (works in nearly every app — even browsers expose caret manipulation through AXUI).
+2. **Try direct text replacement** via `kAXSelectedTextAttribute` (native Cocoa apps honor this — fastest path).
+3. **Fallback: simulate ⌘V** via `CGEventPost` after pushing the suggestion to `NSPasteboard`, then restore the user's clipboard ~120 ms later. Works in Safari/Chrome/Electron because they accept paste like any other app.
+
+The strategy used per apply lands in `/tmp/quill.log` as `[quill][apply] strategy=AxuiText|Clipboard …` so per-app behavior is observable.
+
+Inline underlines still don't render in browsers/Electron (those don't expose `kAXBoundsForRangeParameterizedAttribute`), but the fallback summary panel beside the field lists every suggestion and click-to-fix now works everywhere.
 
 ## Tests
 

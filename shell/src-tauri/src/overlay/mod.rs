@@ -4,6 +4,7 @@
 #![cfg(all(target_os = "macos", feature = "overlay"))]
 
 pub mod apply;
+pub mod clipboard;
 pub mod focus_tracker;
 pub mod mouse_arbiter;
 pub mod window;
