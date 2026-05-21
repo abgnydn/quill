@@ -234,6 +234,10 @@ const personalExport = document.getElementById("personal-export");
 const personalClear = document.getElementById("personal-clear");
 const personalTrain = document.getElementById("personal-train");
 const personalPill = document.getElementById("personal-pill");
+const autoRetrain = document.getElementById("auto-retrain");
+const autoThreshold = document.getElementById("auto-threshold");
+const autoLast = document.getElementById("auto-last");
+const relaunchBadge = document.getElementById("relaunch-badge");
 
 const trainModal = document.getElementById("train-modal");
 const trainState = document.getElementById("train-state");
@@ -380,7 +384,42 @@ trainDismiss.addEventListener("click", () => {
   // still running. They can also explicitly reset via the menu (future).
 });
 
+// ---- Config (auto-retrain + relaunch badge) ----------------------------
+async function refreshConfig() {
+  try {
+    const c = await invoke("config_get");
+    autoRetrain.checked = !!c.auto_retrain_enabled;
+    autoThreshold.value = c.auto_retrain_threshold || 25;
+    autoLast.textContent = c.last_train_at
+      ? `last trained ${c.last_train_at.slice(0, 10)}`
+      : "never trained";
+    if (c.pending_relaunch) {
+      relaunchBadge.classList.remove("hidden");
+    } else {
+      relaunchBadge.classList.add("hidden");
+    }
+  } catch (e) {
+    /* config not available — fail quiet */
+  }
+}
+
+async function pushAutoRetrain() {
+  try {
+    const enabled = !!autoRetrain.checked;
+    const threshold = parseInt(autoThreshold.value || "25", 10);
+    await invoke("config_set_auto_retrain", { enabled, threshold });
+    refreshConfig();
+  } catch (e) {
+    /* shrug; UI will reflect server state on next refresh */
+  }
+}
+
+autoRetrain.addEventListener("change", pushAutoRetrain);
+autoThreshold.addEventListener("change", pushAutoRetrain);
+
 probeCapabilities();
 runCheck();
 refreshPersonal();
+refreshConfig();
 setInterval(refreshPersonal, 5000);
+setInterval(refreshConfig, 7000);

@@ -10,9 +10,12 @@
 use tauri::Manager;
 
 pub mod commands;
+pub mod config;
 pub mod journal;
 pub mod state;
 pub mod training;
+#[cfg(feature = "llm")]
+pub mod training_scheduler;
 pub mod wire;
 
 #[cfg(feature = "llm")]
@@ -109,6 +112,75 @@ pub fn run() {
             app.global_shortcut()
                 .register(rewrite_shortcut)
                 .unwrap_or_else(|e| eprintln!("[quill] could not register ⌘⇧R: {e}"));
+
+            // ---- Menubar tray ------------------------------------------
+            // Quill runs as an LSUIElement — no dock icon, no main app
+            // menu. The tray icon is the only persistent surface.
+            {
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::TrayIconBuilder;
+
+                let show = MenuItem::with_id(app, "show", "Show Quill", true, None::<&str>)?;
+                let train = MenuItem::with_id(
+                    app, "train", "Train personal adapter…", true, None::<&str>,
+                )?;
+                let quit = MenuItem::with_id(app, "quit", "Quit Quill", true, Some("Cmd+Q"))?;
+                let menu = Menu::with_items(app, &[&show, &train, &quit])?;
+
+                let _tray = TrayIconBuilder::with_id("main")
+                    .tooltip("Quill — local-first grammar")
+                    .menu(&menu)
+                    .icon(app.default_window_icon().expect("icon").clone())
+                    .icon_as_template(true)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "show" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
+                        "train" => {
+                            // Forward to the existing train command (no UI yet,
+                            // results land in /tmp/quill.log).
+                            let app_handle = app.clone();
+                            std::thread::spawn(move || {
+                                use tauri::Manager;
+                                let journal: tauri::State<'_, std::sync::Arc<crate::journal::Journal>> =
+                                    app_handle.state();
+                                let training: tauri::State<'_, crate::training::SharedTraining> =
+                                    app_handle.state();
+                                match journal.export_training_pairs(
+                                    &std::env::temp_dir().join("quill-tray-train.jsonl"),
+                                ) {
+                                    Ok(n) if n >= 10 => {
+                                        let _ = training.start(
+                                            std::env::temp_dir().join("quill-tray-train.jsonl"),
+                                        );
+                                    }
+                                    Ok(n) => eprintln!("[quill][tray] only {n} pairs; need ≥10"),
+                                    Err(e) => eprintln!("[quill][tray] export failed: {e}"),
+                                }
+                            });
+                        }
+                        "quit" => app.exit(0),
+                        _ => {}
+                    })
+                    .build(app)?;
+            }
+
+            // Hide main window's close button into "minimise to tray" — by
+            // default Tauri closes the window AND quits the app since this
+            // is the last window. Override.
+            if let Some(w) = app.get_webview_window("main") {
+                let wc = w.clone();
+                w.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = wc.hide();
+                    }
+                });
+            }
+
             app.manage(CheckerState::new());
             let model_path = state::resolve_model_path(app);
             app.manage(RewriteState::from_path(model_path));
@@ -121,7 +193,43 @@ pub fn run() {
                 Err(e) => eprintln!("[quill] journal open failed: {e}"),
             }
 
-            app.manage(std::sync::Arc::new(training::TrainingState::default()));
+            let training = std::sync::Arc::new(training::TrainingState::default());
+            app.manage(training.clone());
+
+            // Config: load (or create) ~/Library/Application Support/Quill/config.json
+            let config = match config::ConfigStore::open_default() {
+                Ok(c) => {
+                    eprintln!("[quill] config at {}", c.path().display());
+                    std::sync::Arc::new(c)
+                }
+                Err(e) => {
+                    eprintln!("[quill] config open failed: {e} (using defaults in memory)");
+                    std::sync::Arc::new(
+                        config::ConfigStore::open_default()
+                            .unwrap_or_else(|_| {
+                                // Last-resort: in-memory only. open_default writes
+                                // through, so two failures imply HOME is unwritable.
+                                unreachable!("config fallback unreachable in practice")
+                            }),
+                    )
+                }
+            };
+            app.manage(config.clone());
+
+            // Background scheduler — only when LLM feature is on (no
+            // training infrastructure otherwise).
+            #[cfg(feature = "llm")]
+            {
+                let journal_arc: std::sync::Arc<journal::Journal> = match app.try_state::<std::sync::Arc<journal::Journal>>() {
+                    Some(s) => s.inner().clone(),
+                    None => {
+                        // journal failed to open earlier; skip scheduler.
+                        eprintln!("[quill] scheduler: no journal state, skipping auto-retrain");
+                        std::sync::Arc::new(journal::Journal::open_default().unwrap_or_else(|_| unreachable!()))
+                    }
+                };
+                training_scheduler::spawn(journal_arc, training.clone(), config.clone());
+            }
 
             #[cfg(all(target_os = "macos", feature = "overlay"))]
             {
@@ -151,6 +259,9 @@ pub fn run() {
             commands::train_personal_status,
             commands::train_personal_install,
             commands::train_personal_reset,
+            commands::config_get,
+            commands::config_set_auto_retrain,
+            commands::config_clear_pending_relaunch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

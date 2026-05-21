@@ -78,6 +78,21 @@
           </div>
         </div>
       </div>
+      <div class="personal-row personal-auto">
+        <label class="auto-row">
+          <input type="checkbox" id="auto-retrain" />
+          <span>Auto-retrain in the background</span>
+          <span class="auto-threshold-wrap">
+            every
+            <input type="number" id="auto-threshold" min="5" max="500" step="5" value="25"/>
+            edits
+          </span>
+        </label>
+        <span class="auto-last" id="auto-last"></span>
+      </div>
+      <div id="relaunch-badge" class="relaunch-badge hidden">
+        ✓ New personal adapter is ready — quit and relaunch Quill to load it.
+      </div>
       <div class="personal-note">
         Your edits stay on this device. Used to train a personal LoRA adapter
         — never sent anywhere. <a href="https://github.com/abgnydn/quill" target="_blank">how this works</a>

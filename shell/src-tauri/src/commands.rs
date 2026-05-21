@@ -207,6 +207,38 @@ pub fn train_personal_reset(training: State<'_, SharedTraining>) {
 }
 
 #[tauri::command]
+pub fn config_get(
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> crate::config::Config {
+    config.snapshot()
+}
+
+#[tauri::command]
+pub fn config_set_auto_retrain(
+    enabled: bool,
+    threshold: Option<u64>,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<crate::config::Config, String> {
+    config
+        .update(|c| {
+            c.auto_retrain_enabled = enabled;
+            if let Some(t) = threshold {
+                c.auto_retrain_threshold = t.max(5);
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn config_clear_pending_relaunch(
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<crate::config::Config, String> {
+    config
+        .update(|c| c.pending_relaunch = false)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn rewrite(
     text: &str,
     instruction: Option<String>,

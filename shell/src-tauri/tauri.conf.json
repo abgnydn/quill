@@ -10,10 +10,13 @@
     "windows": [
       {
         "title": "Quill",
+        "label": "main",
         "width": 920,
         "height": 640,
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "visible": false,
+        "focus": false
       }
     ],
     "security": {
@@ -39,7 +42,8 @@
     "macOS": {
       "minimumSystemVersion": "13.0",
       "frameworks": [],
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "infoPlist": "Info.plist"
     }
   }
 }

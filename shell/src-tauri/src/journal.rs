@@ -193,7 +193,7 @@ pub fn build_event(
     }
 }
 
-fn now_rfc3339() -> String {
+pub fn now_rfc3339() -> String {
     // Avoid pulling chrono just for this; format a minimal UTC ISO timestamp
     // from SystemTime. Good enough for journal use; not for billing.
     use std::time::{SystemTime, UNIX_EPOCH};
