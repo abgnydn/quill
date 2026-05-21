@@ -10,6 +10,7 @@
 use tauri::Manager;
 
 pub mod commands;
+pub mod journal;
 pub mod state;
 pub mod wire;
 
@@ -31,6 +32,14 @@ pub fn run() {
             let model_path = state::resolve_model_path(app);
             app.manage(RewriteState::from_path(model_path));
 
+            match journal::Journal::open_default() {
+                Ok(j) => {
+                    eprintln!("[quill] journal at {}", j.path().display());
+                    app.manage(std::sync::Arc::new(j));
+                }
+                Err(e) => eprintln!("[quill] journal open failed: {e}"),
+            }
+
             #[cfg(all(target_os = "macos", feature = "overlay"))]
             {
                 if let Err(e) = overlay::window::create(&app.handle()) {
@@ -51,6 +60,9 @@ pub fn run() {
             commands::overlay_ping,
             commands::apply_suggestion,
             commands::overlay_set_hot_regions,
+            commands::journal_stats,
+            commands::journal_export,
+            commands::journal_clear,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

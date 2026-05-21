@@ -171,5 +171,66 @@ rewriteDismiss.addEventListener("click", () => {
 
 editor.addEventListener("input", debounce(runCheck, 250));
 
+// ---- Personalization panel (v0.5 phase 1) --------------------------------
+const personalCount = document.getElementById("personal-count");
+const personalApplied = document.getElementById("personal-applied");
+const personalRewrite = document.getElementById("personal-rewrite");
+const personalRange = document.getElementById("personal-range");
+const personalExport = document.getElementById("personal-export");
+const personalClear = document.getElementById("personal-clear");
+
+function fmtTs(t) {
+  if (!t) return "—";
+  return t.slice(0, 10); // YYYY-MM-DD
+}
+
+async function refreshPersonal() {
+  try {
+    const s = await invoke("journal_stats");
+    personalCount.textContent = String(s.count || 0);
+    personalApplied.textContent = String(s.applied || 0);
+    personalRewrite.textContent = String(s.rewrite_applied || 0);
+    if (s.oldest_ts && s.newest_ts) {
+      personalRange.textContent =
+        s.oldest_ts === s.newest_ts
+          ? `since ${fmtTs(s.oldest_ts)}`
+          : `${fmtTs(s.oldest_ts)} → ${fmtTs(s.newest_ts)}`;
+    } else {
+      personalRange.textContent = "no events yet";
+    }
+  } catch (e) {
+    // journal not available — fail quiet
+  }
+}
+
+personalExport.addEventListener("click", async () => {
+  const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const out = `~/Downloads/quill-training-${ts}.jsonl`.replace(/^~/, `${(await invoke("capabilities"))?.home ?? ""}`);
+  // We can't read $HOME from JS — let Rust resolve it. Pass an absolute path.
+  const path = `/tmp/quill-training-${ts}.jsonl`;
+  try {
+    const n = await invoke("journal_export", { outPath: path });
+    personalExport.textContent = `✓ ${n} pairs → ${path}`;
+    setTimeout(() => (personalExport.textContent = "⤓ Export"), 4000);
+  } catch (e) {
+    personalExport.textContent = `error: ${e}`;
+    setTimeout(() => (personalExport.textContent = "⤓ Export"), 4000);
+  }
+});
+
+personalClear.addEventListener("click", async () => {
+  if (!confirm("Clear all learned edits? This cannot be undone.")) return;
+  try {
+    const bytes = await invoke("journal_clear");
+    personalClear.textContent = `✓ cleared ${bytes}B`;
+    setTimeout(() => (personalClear.textContent = "⌫ Reset"), 2500);
+    refreshPersonal();
+  } catch (e) {
+    personalClear.textContent = `error: ${e}`;
+  }
+});
+
 probeCapabilities();
 runCheck();
+refreshPersonal();
+setInterval(refreshPersonal, 5000);

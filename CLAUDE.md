@@ -68,6 +68,8 @@ quill/
 - ✅ `scripts/install-dev.sh` for the kill+install+codesign+launch dance
 - ✅ Tests: 5/5 passing (`cargo test --features overlay --lib`)
 - ✅ Brain writeups: `projects/quill.md` + `research-vault/experiments/{E38,E39,E40}-quill-*.md`
+- ✅ v0.5 phase 1 (personalization journal): every apply/rewrite_apply event lands in `~/Library/Application Support/Quill/journal.jsonl`; main-window panel shows count + applied + range; export → `{src,tgt}` JSONL for the train pipeline; reset wipes locally. 7/7 tests pass.
+- ⏳ v0.5 phase 2: `train/scripts/train_personal.py` skeleton in place — phase 2 implements the actual 50/50-rehearsal LoRA fine-tune on a user journal + base CoEdIT adapter.
 
 ## 🎯 Resume here (on "continue")
 

@@ -1,8 +1,12 @@
 //! All `#[tauri::command]` functions. Kept thin — every command delegates
 //! to a typed helper in `state.rs` / `wire.rs` / `overlay::*`.
 
+use std::sync::Arc;
+
+use serde::Deserialize;
 use tauri::State;
 
+use crate::journal::{self, Journal, JournalStats};
 use crate::state::{CheckerState, RewriteState};
 use crate::wire::{check_text_with, Capabilities, WireLint};
 
@@ -47,19 +51,76 @@ pub fn overlay_set_hot_regions(
 #[tauri::command]
 pub fn overlay_set_hot_regions(_: serde_json::Value) {}
 
+/// Per-call context passed from JS so the journal can record useful pairs
+/// without a second round-trip. All fields optional — when missing we still
+/// perform the AXUI write but skip journaling that event.
+#[derive(Deserialize, Default)]
+pub struct ApplyContext {
+    /// "apply" (suggestion chip) or "rewrite_apply" (whole-text AI rewrite).
+    pub kind: Option<String>,
+    /// Full text of the focused field before the apply.
+    pub source_text: Option<String>,
+    /// What we'd predict the text becomes after applying (frontend-computed
+    /// for speed; we don't need to re-read AXUI to know).
+    pub applied_text: Option<String>,
+    pub lint_kind: Option<String>,
+    pub lint_message: Option<String>,
+}
+
 /// Apply a correction to the currently-focused text field via AXUI.
-/// Selects [start, end) then replaces with `replacement`.
+/// Selects [start, end) then replaces with `replacement`. Journals the
+/// (source, applied) pair when `context` is supplied.
 #[tauri::command]
-pub fn apply_suggestion(start: u32, end: u32, replacement: String) -> Result<(), String> {
+pub fn apply_suggestion(
+    start: u32,
+    end: u32,
+    replacement: String,
+    context: Option<ApplyContext>,
+    journal: State<'_, Arc<Journal>>,
+) -> Result<(), String> {
     #[cfg(all(target_os = "macos", feature = "overlay"))]
     {
-        crate::overlay::apply::apply(start, end, &replacement).map_err(|e| e.to_string())
+        crate::overlay::apply::apply(start, end, &replacement).map_err(|e| e.to_string())?;
+        if let Some(ctx) = context {
+            let lint = match (ctx.lint_kind.as_deref(), ctx.lint_message.as_deref()) {
+                (Some(k), Some(m)) => Some((start, end, k, m)),
+                _ => None,
+            };
+            let evt = journal::build_event(
+                ctx.kind.as_deref().unwrap_or("apply"),
+                ctx.source_text.as_deref().unwrap_or(""),
+                lint,
+                &replacement,
+                ctx.applied_text.as_deref().unwrap_or(&replacement),
+            );
+            journal.append(&evt);
+        }
+        Ok(())
     }
     #[cfg(not(all(target_os = "macos", feature = "overlay")))]
     {
-        let _ = (start, end, replacement);
+        let _ = (start, end, replacement, context, journal);
         Err("apply_suggestion requires the 'overlay' feature on macOS".into())
     }
+}
+
+#[tauri::command]
+pub fn journal_stats(journal: State<'_, Arc<Journal>>) -> JournalStats {
+    journal.stats()
+}
+
+#[tauri::command]
+pub fn journal_export(
+    out_path: String,
+    journal: State<'_, Arc<Journal>>,
+) -> Result<usize, String> {
+    let path = std::path::PathBuf::from(out_path);
+    journal.export_training_pairs(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn journal_clear(journal: State<'_, Arc<Journal>>) -> Result<u64, String> {
+    journal.clear().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

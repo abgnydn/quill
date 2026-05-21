@@ -39,6 +39,28 @@
         <div class="empty">no suggestions yet</div>
       </aside>
     </main>
+    <section id="personal">
+      <div class="personal-row">
+        <div class="personal-stats">
+          <div class="personal-headline">
+            <strong id="personal-count">0</strong>
+            <span>edits learned from you</span>
+          </div>
+          <div class="personal-detail" id="personal-detail">
+            <span><b id="personal-applied">0</b> applied · <b id="personal-rewrite">0</b> rewrites</span>
+            <span id="personal-range"></span>
+          </div>
+        </div>
+        <div class="personal-actions">
+          <button id="personal-export" title="Export as JSONL for the train pipeline">⤓ Export</button>
+          <button id="personal-clear" title="Wipe the journal" class="danger">⌫ Reset</button>
+        </div>
+      </div>
+      <div class="personal-note">
+        Your edits stay on this device. Used to train a personal LoRA adapter
+        — never sent anywhere. <a href="https://github.com/abgnydn/quill" target="_blank">how this works</a>
+      </div>
+    </section>
     <script src="main.js"></script>
   </body>
 </html>

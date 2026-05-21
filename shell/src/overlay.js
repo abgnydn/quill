@@ -165,6 +165,8 @@
   popover.addEventListener("mouseleave", scheduleHide);
 
   // ---- suggestion click → AXUI write-back -----------------------------
+  // Builds the applied_text optimistically so the journal captures the
+  // (pre, post) pair without needing a second AXUI read.
   const applySuggestion = async (lintIdx, suggIdx, btn) => {
     const lint = currentLints[lintIdx];
     if (!lint) return;
@@ -174,11 +176,24 @@
     if (s.kind === "remove") replacement = "";
     else if (s.kind === "insert_after") { start = lint.end; end = lint.end; }
 
+    const chars = [...currentText];
+    const applied_text =
+      chars.slice(0, start).join("") + replacement + chars.slice(end).join("");
+
     if (btn) btn.classList.add("applied");
     try {
-      await invoke("apply_suggestion", { start, end, replacement });
+      await invoke("apply_suggestion", {
+        start, end, replacement,
+        context: {
+          kind: "apply",
+          source_text: currentText,
+          applied_text,
+          lint_kind: lint.kind,
+          lint_message: lint.message,
+        },
+      });
       ping("apply-ok", lintIdx, `${lint.kind} -> "${replacement.slice(0,40)}"`);
-      setTimeout(hidePopover, 280);  // brief check-mark glance before dismissing
+      setTimeout(hidePopover, 280);
     } catch (err) {
       if (btn) btn.classList.remove("applied");
       ping("apply-err", lintIdx, String(err));
@@ -221,7 +236,14 @@
     if (!lastRewrite || !currentText) return;
     try {
       await invoke("apply_suggestion", {
-        start: 0, end: [...currentText].length, replacement: lastRewrite,
+        start: 0,
+        end: [...currentText].length,
+        replacement: lastRewrite,
+        context: {
+          kind: "rewrite_apply",
+          source_text: currentText,
+          applied_text: lastRewrite,
+        },
       });
       hidePopover();
     } catch (err) {
