@@ -70,6 +70,47 @@
       .replaceAll("<", "&lt;")
       .replaceAll(">", "&gt;");
 
+  // Word-level LCS diff for the AI rewrite output. Splits on whitespace
+  // boundaries but preserves separators so reassembling is exact.
+  function tokenizeWords(s) {
+    return s.match(/\s+|\S+/g) || [];
+  }
+  function diffWords(oldStr, newStr) {
+    const a = tokenizeWords(oldStr);
+    const b = tokenizeWords(newStr);
+    const m = a.length, n = b.length;
+    const dp = Array(m + 1).fill(null).map(() => new Uint32Array(n + 1));
+    for (let i = m - 1; i >= 0; i--) {
+      for (let j = n - 1; j >= 0; j--) {
+        dp[i][j] = a[i] === b[j] ? dp[i+1][j+1] + 1 : Math.max(dp[i+1][j], dp[i][j+1]);
+      }
+    }
+    const out = [];
+    let i = 0, j = 0;
+    while (i < m && j < n) {
+      if (a[i] === b[j]) { out.push({ type: "same", text: a[i] }); i++; j++; }
+      else if (dp[i+1][j] >= dp[i][j+1]) { out.push({ type: "del", text: a[i] }); i++; }
+      else { out.push({ type: "ins", text: b[j] }); j++; }
+    }
+    while (i < m) { out.push({ type: "del", text: a[i++] }); }
+    while (j < n) { out.push({ type: "ins", text: b[j++] }); }
+    const merged = [];
+    for (const seg of out) {
+      const last = merged[merged.length - 1];
+      if (last && last.type === seg.type) last.text += seg.text;
+      else merged.push({ ...seg });
+    }
+    return merged;
+  }
+  function renderDiffHtml(oldStr, newStr) {
+    return diffWords(oldStr, newStr).map((s) => {
+      const t = escapeHtml(s.text);
+      if (s.type === "del") return `<del>${t}</del>`;
+      if (s.type === "ins") return `<ins>${t}</ins>`;
+      return t;
+    }).join("");
+  }
+
   const kindClass = (kind) => {
     const k = String(kind).toLowerCase();
     if (k.includes("spell")) return "spelling";
