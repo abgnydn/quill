@@ -75,28 +75,41 @@ quill/
 
 **Bare `continue` = run these steps in order, no re-briefing.**
 
-1. Confirm tests still pass: `cd ~/quill/shell/src-tauri && cargo test --features llm,overlay --lib` — should be 8/8 in <10s warm.
-2. Rebuild and reinstall locally: `./scripts/install-dev.sh --build --tail`.
-3. Check `journal_stats` count via the personalization panel — is the user accumulating edits?
-4. If `count >= 50`, offer to run the personal LoRA training:
-   ```
-   cd ~/quill/train
-   # in Quill main window: click ⤓ Export → notes the /tmp/quill-training-*.jsonl path
-   HF_TOKEN=hf_xxx .venv/bin/modal run modal_train_personal.py \
-       --journal /tmp/quill-training-2026-MM-DDT...jsonl
-   # ~15 min later, downloads ./checkpoints/personal-adapter.gguf
-   cp ./checkpoints/personal-adapter.gguf \
-       "$HOME/Library/Application Support/Quill/personal-adapter.gguf"
-   killall quill; open ~/Applications/Quill.app
-   # main window header should now say "harper + llm + personal"
-   # personalization pill flips from "base only" → green "personal"
-   ```
-   Then write up as `~/brain/research-vault/experiments/E41-quill-personal-lora.md` with: training wall-clock, before/after qualitative rewrite samples, journal size at first run.
-5. If `count < 50`, ask the user which v0.6+ fork to push on:
-   - **A — Background continual training (v0.6)**: auto-trigger personal training after N applied edits, run in a sidecar Modal job.
-   - **B — Clipboard write-back fallback (E41b)**: simulate ⌘C → mutate → ⌘V for Safari/Chrome/Electron.
-   - **C — Menubar mode**: drop the dock icon, become ambient.
-   - **D — BitNet base swap (v0.7)**: replace Gemma 270M with BitNet b1.58 2B4T via the now-upstream llama.cpp kernels.
+Volatile state (phase / commit count / counts) lives in `git log -10`
+and `~/Library/Application Support/Quill/{journal.jsonl,config.json}`.
+This block describes the current direction, not the current commit.
+
+1. **Verify state:** `cd ~/quill && git log -3 --oneline`, then
+   `pgrep -fl Quill.app/Contents/MacOS/quill`. If Quill isn't running,
+   reinstall: `./scripts/install-dev.sh --build` (first-time on this
+   machine will also `cmake --build` QVAC into `~/.cache/qvac/`, ~5 min
+   one-time; subsequent builds reuse the cache).
+2. **Run tests:** `./scripts/test.sh` — should be 31 + 2 ignored at
+   v0.9 phase 1. If it drops below that count, regression.
+3. **Continue the v0.9 QVAC integration.** Phase 1 (bundling) shipped
+   on `8ddf0a3`. Next:
+   - **Phase 2 — local LoRA training (replace Modal subprocess).**
+     New `src/training_local.rs` that wraps the bundled
+     `llama-finetune-lora` binary the same way `training.rs` wraps
+     `modal run`. `training_scheduler.rs` prefers local when QVAC is
+     bundled. Personal training goes from 15 min Modal job + $0.20 to
+     ~5 min local + free.
+   - **Phase 3 — BitNet inference path.** New `RewriteEngine::Qvac`
+     variant shelling out to bundled `llama-cli` for BitNet GGUFs.
+     Pick a base: BitDistill Qwen3-0.6B (~150 MB), Falcon3-1B-1.58bit
+     (~210 MB), or BitNet-from-scratch on CoEdIT via QVAC's trainer.
+   - **Phase 4 — adapter hot-reload.** Auto-swap engine after a
+     successful retrain instead of showing the "relaunch to apply"
+     badge.
+4. **If user pushes back on v0.9 direction**, the unshipped v0.6+
+   alternatives still standing: BitNet swap straight to bitnet.cpp
+   (rejected per E43 — would be a regression on llama-cpp-2);
+   per-app coverage matrix (manual testing, ~2 hrs); repo public +
+   launch post.
+
+See [[E43-quill-qvac-integration]] for the recon numbers, why we
+picked the QVAC subprocess path over a Rust FFI fork, and the wrong
+turns to avoid.
 
 ## Known gaps / next concrete tasks
 
