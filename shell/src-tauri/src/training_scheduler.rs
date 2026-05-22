@@ -22,6 +22,7 @@ use std::time::{Duration, Instant};
 
 use crate::config::ConfigStore;
 use crate::journal::Journal;
+use crate::qvac::BackendConfig;
 use crate::training::{JobState, TrainingState};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(30);
@@ -30,14 +31,20 @@ pub fn spawn(
     journal: Arc<Journal>,
     training: Arc<TrainingState>,
     config: Arc<ConfigStore>,
+    backend: Arc<BackendConfig>,
 ) {
     thread::Builder::new()
         .name("quill-retrain-scheduler".into())
-        .spawn(move || run(journal, training, config))
+        .spawn(move || run(journal, training, config, backend))
         .expect("spawn retrain scheduler");
 }
 
-fn run(journal: Arc<Journal>, training: Arc<TrainingState>, config: Arc<ConfigStore>) {
+fn run(
+    journal: Arc<Journal>,
+    training: Arc<TrainingState>,
+    config: Arc<ConfigStore>,
+    backend: Arc<BackendConfig>,
+) {
     eprintln!("[quill][scheduler] background retrain loop started (poll every {}s)", POLL_INTERVAL.as_secs());
     let mut waiting_on_job_since: Option<Instant> = None;
     loop {
@@ -109,15 +116,28 @@ fn run(journal: Arc<Journal>, training: Arc<TrainingState>, config: Arc<ConfigSt
             continue;
         }
 
-        // Export → spawn.
+        // Export → spawn. Prefer LOCAL backend (free, ~5 min on Metal)
+        // when bundled; fall back to Modal.
         let export_path: PathBuf =
             std::env::temp_dir().join("quill-auto-retrain.jsonl");
         match journal.export_training_pairs(&export_path) {
             Ok(n) if n >= 10 => {
-                eprintln!(
-                    "[quill][scheduler] firing auto-retrain: {n} pairs, {new_events} new events since last train",
-                );
-                match training.start(export_path) {
+                let start_result = if backend.local_ready() {
+                    let finetune = backend.finetune_bin.clone().unwrap();
+                    let base = backend.base_model.clone().unwrap();
+                    let out = crate::state::personal_adapter_path()
+                        .unwrap_or_else(|| std::env::temp_dir().join("quill-auto-adapter.gguf"));
+                    eprintln!(
+                        "[quill][scheduler] firing auto-retrain (LOCAL): {n} pairs, {new_events} new events"
+                    );
+                    training.start_local(finetune, base, export_path.clone(), out)
+                } else {
+                    eprintln!(
+                        "[quill][scheduler] firing auto-retrain (MODAL fallback): {n} pairs, {new_events} new events"
+                    );
+                    training.start(export_path.clone())
+                };
+                match start_result {
                     Ok(()) => {
                         waiting_on_job_since = Some(Instant::now());
                     }

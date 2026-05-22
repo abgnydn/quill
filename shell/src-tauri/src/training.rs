@@ -36,6 +36,8 @@ pub struct TrainingStatus {
     pub error: Option<String>,
     /// Set when state == Succeeded — the local path Quill will install from.
     pub output_adapter: Option<String>,
+    /// Which backend ran this job — UI surfaces "local (free)" vs "Modal ($0.20)".
+    pub backend: Backend,
 }
 
 impl Default for TrainingStatus {
@@ -46,6 +48,7 @@ impl Default for TrainingStatus {
             stage: None,
             error: None,
             output_adapter: None,
+            backend: Backend::None,
         }
     }
 }
@@ -57,9 +60,28 @@ struct Job {
     stage: Option<String>,
     error: Option<String>,
     output_adapter: Option<PathBuf>,
-    /// Working dir of the spawned process (so install can find the
-    /// downloaded `checkpoints/personal-adapter.gguf`).
+    /// Working dir of the spawned process — used by the Modal backend so
+    /// install can find `checkpoints/personal-adapter.gguf` after the
+    /// modal CLI downloads it. Unset for the local backend (we already
+    /// know the exact output path).
     cwd: Option<PathBuf>,
+    /// Pre-known output path for backends that produce a deterministic
+    /// adapter file (i.e. the local llama-finetune-lora path, which we
+    /// pass via `--output-adapter`). Set at spawn time so status()
+    /// doesn't have to guess.
+    expected_output: Option<PathBuf>,
+    /// Which backend this job is running on — surfaced to the UI so the
+    /// user can see "training locally" vs "training on Modal".
+    backend: Backend,
+}
+
+#[derive(Serialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Backend {
+    Modal,
+    Local,
+    /// No job has run yet — distinguish from a default that lies.
+    None,
 }
 
 impl Default for Job {
@@ -72,6 +94,8 @@ impl Default for Job {
             error: None,
             output_adapter: None,
             cwd: None,
+            expected_output: None,
+            backend: Backend::None,
         }
     }
 }
@@ -178,8 +202,12 @@ impl TrainingState {
                 g.error = err;
                 // On success, point the UI at the generated adapter.
                 if new_state == JobState::Succeeded {
-                    if let Some(cwd) = &g.cwd {
-                        let out = cwd.join("checkpoints/personal-adapter.gguf");
+                    // Prefer the pre-known output path (local backend);
+                    // fall back to the Modal cwd-relative default.
+                    let candidate = g.expected_output.clone().or_else(|| {
+                        g.cwd.as_ref().map(|c| c.join("checkpoints/personal-adapter.gguf"))
+                    });
+                    if let Some(out) = candidate {
                         if out.exists() {
                             g.output_adapter = Some(out);
                         }
@@ -200,6 +228,7 @@ impl TrainingState {
             stage: g.stage.clone(),
             error: g.error.clone(),
             output_adapter: g.output_adapter.as_ref().map(|p| p.display().to_string()),
+            backend: g.backend,
         }
     }
 
@@ -245,12 +274,54 @@ impl TrainingState {
             error: None,
             output_adapter: None,
             cwd: Some(train_dir),
+            expected_output: None,
+            backend: Backend::Modal,
+        };
+        Ok(())
+    }
+
+    /// Spawn `llama-finetune-lora` from the bundled QVAC binaries — runs
+    /// the whole training loop on the user's Mac, no Modal, no network.
+    /// `output_adapter` is the destination GGUF path passed to QVAC via
+    /// `--output-adapter`; we record it so `install()` can find it later.
+    #[cfg(feature = "llm")]
+    pub fn start_local(
+        &self,
+        qvac_bin: PathBuf,
+        base_model: PathBuf,
+        journal_export: PathBuf,
+        output_adapter: PathBuf,
+    ) -> Result<(), StartError> {
+        let mut g = self.inner.lock().map_err(|_| StartError::Spawn("mutex".into()))?;
+        if g.state == JobState::Running {
+            return Err(StartError::AlreadyRunning);
+        }
+        let child = crate::training_local::spawn(
+            &qvac_bin,
+            &base_model,
+            &journal_export,
+            &output_adapter,
+        )
+        .map_err(|e| StartError::Spawn(e.to_string()))?;
+        *g = Job {
+            child: Some(child),
+            started_at: Some(Instant::now()),
+            state: JobState::Running,
+            stage: Some("starting local training on Metal…".into()),
+            error: None,
+            output_adapter: None,
+            cwd: None,
+            expected_output: Some(output_adapter),
+            backend: Backend::Local,
         };
         Ok(())
     }
 
     /// Copy a previously-trained adapter into Quill's Application Support
-    /// dir so it's auto-detected on the next launch.
+    /// dir so it's auto-detected on the next launch. When the local
+    /// backend wrote the adapter directly to `dest` (we pass it via
+    /// `--output-adapter`), the copy is a no-op and we just return the
+    /// existing size.
     pub fn install(&self, dest: &Path) -> Result<u64, String> {
         let src = {
             let g = self.inner.lock().map_err(|_| "mutex".to_string())?;
@@ -263,6 +334,12 @@ impl TrainingState {
         }
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        // Same file? Nothing to do — local backend already wrote here.
+        if let (Ok(s), Ok(d)) = (src.canonicalize(), dest.canonicalize()) {
+            if s == d {
+                return std::fs::metadata(dest).map(|m| m.len()).map_err(|e| e.to_string());
+            }
         }
         std::fs::copy(&src, dest).map_err(|e| e.to_string())
     }

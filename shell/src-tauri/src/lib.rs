@@ -16,6 +16,8 @@ pub mod qvac;
 pub mod state;
 pub mod training;
 #[cfg(feature = "llm")]
+pub mod training_local;
+#[cfg(feature = "llm")]
 pub mod training_scheduler;
 pub mod wire;
 
@@ -197,6 +199,17 @@ pub fn run() {
             let training = std::sync::Arc::new(training::TrainingState::default());
             app.manage(training.clone());
 
+            // Snapshot the bundled-binary + base-model paths once at startup
+            // so the background scheduler doesn't have to re-resolve them.
+            let backend_config = std::sync::Arc::new(qvac::BackendConfig::resolve(app));
+            eprintln!(
+                "[quill] backend config: local_ready={} finetune_bin={:?} base_model={:?}",
+                backend_config.local_ready(),
+                backend_config.finetune_bin,
+                backend_config.base_model,
+            );
+            app.manage(backend_config.clone());
+
             // Config: load (or create) ~/Library/Application Support/Quill/config.json
             let config = match config::ConfigStore::open_default() {
                 Ok(c) => {
@@ -229,7 +242,12 @@ pub fn run() {
                         std::sync::Arc::new(journal::Journal::open_default().unwrap_or_else(|_| unreachable!()))
                     }
                 };
-                training_scheduler::spawn(journal_arc, training.clone(), config.clone());
+                training_scheduler::spawn(
+                    journal_arc,
+                    training.clone(),
+                    config.clone(),
+                    backend_config.clone(),
+                );
             }
 
             #[cfg(all(target_os = "macos", feature = "overlay"))]

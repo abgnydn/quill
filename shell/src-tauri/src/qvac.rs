@@ -51,6 +51,32 @@ pub fn is_available(app: &tauri::AppHandle) -> bool {
         && binary_path(app, "llama-finetune-lora").is_some()
 }
 
+/// Snapshot of resolved bundled-binary paths, captured at app startup so
+/// the background scheduler (which doesn't have an AppHandle) can decide
+/// which training backend to use without re-resolving every poll.
+#[derive(Default, Clone)]
+pub struct BackendConfig {
+    pub finetune_bin: Option<PathBuf>,
+    pub base_model: Option<PathBuf>,
+}
+
+impl BackendConfig {
+    pub fn resolve(app: &tauri::App) -> Self {
+        let handle = app.handle().clone();
+        Self {
+            finetune_bin: binary_path(&handle, "llama-finetune-lora"),
+            base_model: crate::state::resolve_model_path(app),
+        }
+    }
+
+    /// True when both the QVAC trainer AND the base model are resolvable —
+    /// the two preconditions for `TrainingState::start_local`.
+    pub fn local_ready(&self) -> bool {
+        self.finetune_bin.as_ref().is_some_and(|p| p.exists())
+            && self.base_model.as_ref().is_some_and(|p| p.exists())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // No unit tests at this layer — the bundled-binary check requires a

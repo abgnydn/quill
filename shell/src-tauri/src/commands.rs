@@ -175,6 +175,7 @@ use crate::training::{SharedTraining, TrainingStatus};
 pub fn train_personal_start(
     journal: State<'_, Arc<Journal>>,
     training: State<'_, SharedTraining>,
+    backend: State<'_, Arc<crate::qvac::BackendConfig>>,
 ) -> Result<TrainingStatus, String> {
     // 1. Export the current journal to a fresh temp file.
     let tmp = std::env::temp_dir().join(format!(
@@ -192,7 +193,22 @@ pub fn train_personal_start(
     }
     eprintln!("[quill][train] exported {n} pairs to {}", tmp.display());
 
-    training.start(tmp).map_err(|e| e.to_string())?;
+    // Local backend (QVAC + bundled base model) is preferred — free, ~5
+    // min on Metal vs ~15 min + $0.20 on Modal. Fall back to Modal only
+    // when the local toolchain isn't fully bundled (e.g. dev build
+    // without install-dev.sh having staged QVAC).
+    if backend.local_ready() {
+        let finetune = backend.finetune_bin.clone().unwrap();
+        let base = backend.base_model.clone().unwrap();
+        let out = crate::state::personal_adapter_path()
+            .ok_or_else(|| "HOME not resolvable".to_string())?;
+        training
+            .start_local(finetune, base, tmp, out)
+            .map_err(|e| e.to_string())?;
+    } else {
+        eprintln!("[quill][train] local backend not ready, falling back to Modal");
+        training.start(tmp).map_err(|e| e.to_string())?;
+    }
     Ok(training.status())
 }
 

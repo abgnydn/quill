@@ -328,8 +328,18 @@ function fmtElapsed(s) {
   return m > 0 ? `${m}m ${sec % 60}s elapsed` : `${sec}s elapsed`;
 }
 
+const BACKEND_LABEL = {
+  local: "on your Mac (Metal · free)",
+  modal: "on Modal (cloud · ~$0.20)",
+  none: "",
+};
+
 function renderTrainStatus(st) {
-  trainState.textContent = STATE_LABEL[st.state] || st.state;
+  let label = STATE_LABEL[st.state] || st.state;
+  if (st.backend && st.backend !== "none" && (st.state === "running" || st.state === "succeeded")) {
+    label += ` · ${BACKEND_LABEL[st.backend] || st.backend}`;
+  }
+  trainState.textContent = label;
   trainElapsed.textContent = fmtElapsed(st.elapsed_secs);
   trainStage.textContent = st.stage || "";
   trainError.textContent = st.error || "";
