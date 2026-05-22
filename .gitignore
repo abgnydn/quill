@@ -32,3 +32,9 @@ train/wandb/
 # Logs
 logs/
 *.log
+
+# QVAC bundled binaries (built fresh per-machine by scripts/install-dev.sh).
+# The directory itself + the README placeholder ARE committed so Tauri's
+# resource-bundling glob always matches at least one file.
+shell/src-tauri/resources/qvac/*
+!shell/src-tauri/resources/qvac/README.md

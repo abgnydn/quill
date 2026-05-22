@@ -37,7 +37,13 @@ async function probeCapabilities() {
     } else {
       rewriteHint.textContent = "rebuild with --features llm to enable";
     }
+    if (c.qvac_available) {
+      label += " · qvac";
+    }
     caps.textContent = label;
+    if (c.qvac_version) {
+      caps.title = `QVAC Fabric: ${c.qvac_version}`;
+    }
     // Pill in the personalization panel reflects the same state.
     if (personalPill) {
       if (c.personal_adapter_loaded) {

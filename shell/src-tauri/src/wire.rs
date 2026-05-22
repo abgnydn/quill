@@ -31,6 +31,11 @@ pub struct Capabilities {
     pub model_loaded: bool,
     /// True when a personal LoRA adapter is loaded on top of the base.
     pub personal_adapter_loaded: bool,
+    /// True when QVAC Fabric binaries (BitNet inference + on-device LoRA
+    /// training) are bundled in the .app and runnable.
+    pub qvac_available: bool,
+    /// Build-version string from `llama-cli --version` when available.
+    pub qvac_version: Option<String>,
 }
 
 fn wire_lints_from<I: IntoIterator<Item = harper_core::linting::Lint>>(lints: I) -> Vec<WireLint> {
@@ -82,15 +87,17 @@ mod tests {
             llm_built: true,
             model_loaded: true,
             personal_adapter_loaded: true,
+            qvac_available: true,
+            qvac_version: Some("b1-3daef61".into()),
         };
         let s = serde_json::to_string(&c).unwrap();
         // JS-side reads exactly these field names; protect against drift.
-        assert!(s.contains("\"llm_built\":true"));
-        assert!(s.contains("\"model_loaded\":true"));
-        assert!(
-            s.contains("\"personal_adapter_loaded\":true"),
-            "missing personal_adapter_loaded in wire payload: {s}"
-        );
+        for f in [
+            "llm_built", "model_loaded", "personal_adapter_loaded",
+            "qvac_available", "qvac_version",
+        ] {
+            assert!(s.contains(&format!("\"{f}\":")), "missing {f} in {s}");
+        }
     }
 
     #[test]

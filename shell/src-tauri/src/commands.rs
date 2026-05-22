@@ -17,11 +17,22 @@ pub fn check(text: &str, state: State<'_, CheckerState>) -> Vec<WireLint> {
 }
 
 #[tauri::command]
-pub fn capabilities(state: State<'_, RewriteState>) -> Capabilities {
+pub fn capabilities(
+    state: State<'_, RewriteState>,
+    app: tauri::AppHandle,
+) -> Capabilities {
+    let qvac_available = crate::qvac::is_available(&app);
+    let qvac_version = if qvac_available {
+        crate::qvac::version(&app)
+    } else {
+        None
+    };
     Capabilities {
         llm_built: cfg!(feature = "llm"),
         model_loaded: state.is_loaded(),
         personal_adapter_loaded: state.has_personal_adapter(),
+        qvac_available,
+        qvac_version,
     }
 }
 

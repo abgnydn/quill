@@ -35,7 +35,10 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "resources": ["resources/quill-q4_k_m.gguf"],
+    "resources": [
+      "resources/quill-q4_k_m.gguf",
+      "resources/qvac/*"
+    ],
     "category": "Productivity",
     "shortDescription": "Local-first grammar assistant",
     "longDescription": "Native desktop grammar checker combining Harper rules with a fine-tuned Gemma 3 270M LoRA. 100% on-device, no network calls.",

@@ -12,6 +12,7 @@ use tauri::Manager;
 pub mod commands;
 pub mod config;
 pub mod journal;
+pub mod qvac;
 pub mod state;
 pub mod training;
 #[cfg(feature = "llm")]

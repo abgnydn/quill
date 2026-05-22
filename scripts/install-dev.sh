@@ -24,6 +24,56 @@ BUILT_APP="$REPO_ROOT/shell/src-tauri/target/release/bundle/macos/$APP_NAME"
 INSTALL_DIR="$HOME/Applications"
 INSTALL_PATH="$INSTALL_DIR/$APP_NAME"
 LOG="/tmp/quill.log"
+QVAC_CACHE="$HOME/.cache/qvac/qvac-fabric-llm.cpp"
+QVAC_RESOURCES="$REPO_ROOT/shell/src-tauri/resources/qvac"
+
+# Build QVAC (BitNet + on-device LoRA training engine) once, cache the
+# binaries under ~/.cache/qvac/, then copy them into the Tauri resources
+# directory so they get bundled inside Quill.app/Contents/Resources/qvac/.
+prepare_qvac() {
+  mkdir -p "$QVAC_RESOURCES"
+  local need_build=0
+  for bin in llama-cli llama-finetune-lora; do
+    if [[ ! -x "$QVAC_CACHE/build/bin/$bin" ]]; then
+      need_build=1
+    fi
+  done
+  if [[ "$need_build" -eq 1 ]]; then
+    echo "[quill] QVAC binaries missing — cloning + building (one-time, ~5 min)…"
+    if [[ ! -d "$QVAC_CACHE" ]]; then
+      mkdir -p "$(dirname "$QVAC_CACHE")"
+      git clone --depth 1 https://github.com/tetherto/qvac-fabric-llm.cpp \
+        "$QVAC_CACHE"
+    fi
+    (
+      cd "$QVAC_CACHE"
+      cmake -B build -DGGML_METAL=ON -DLLAMA_CURL=OFF -DGGML_NATIVE=ON \
+        -DBUILD_SHARED_LIBS=ON >/dev/null
+      cmake --build build --config Release \
+        --target llama-cli llama-finetune-lora -j "$(sysctl -n hw.ncpu)"
+    )
+  else
+    echo "[quill] QVAC cache hit at $QVAC_CACHE"
+  fi
+  echo "[quill] staging QVAC binaries → $QVAC_RESOURCES"
+  # Collect candidates without aborting on no-match glob expansion.
+  shopt -s nullglob
+  local files=(
+    "$QVAC_CACHE/build/bin/llama-cli"
+    "$QVAC_CACHE/build/bin/llama-finetune-lora"
+    "$QVAC_CACHE/build/bin"/*.dylib
+    "$QVAC_CACHE/build/bin"/*.metallib
+  )
+  shopt -u nullglob
+  for f in "${files[@]}"; do
+    [[ -e "$f" ]] || continue
+    # Skip symlinked versions — only copy concrete files.
+    [[ -L "$f" ]] && continue
+    cp -f "$f" "$QVAC_RESOURCES/"
+  done
+  echo "[quill] QVAC staged: $(ls "$QVAC_RESOURCES" | wc -l | tr -d ' ') files, \
+$(du -sh "$QVAC_RESOURCES" | cut -f1)"
+}
 
 BUILD=0
 TAIL=0
@@ -38,6 +88,7 @@ for arg in "$@"; do
 done
 
 if [[ "$BUILD" -eq 1 ]]; then
+  prepare_qvac
   echo "[quill] building release with llm + overlay features…"
   ( cd "$REPO_ROOT/shell/src-tauri" && cargo tauri build --features llm,overlay )
 fi
