@@ -104,7 +104,7 @@ impl RewriteState {
 }
 
 /// Resolve the model path: prefer QUILL_MODEL env var (dev override), fall
-/// back to the bundled `resources/quill-q4_k_m.gguf` shipped inside the .app.
+/// back to the bundled `resources/lfm2.5-350m-q4_k_m.gguf` shipped inside the .app.
 pub fn resolve_model_path(app: &tauri::App) -> Option<std::path::PathBuf> {
     if let Ok(env) = std::env::var("QUILL_MODEL") {
         return Some(env.into());
@@ -112,7 +112,7 @@ pub fn resolve_model_path(app: &tauri::App) -> Option<std::path::PathBuf> {
     use tauri::Manager;
     app.path()
         .resolve(
-            "resources/quill-q4_k_m.gguf",
+            "resources/lfm2.5-350m-q4_k_m.gguf",
             tauri::path::BaseDirectory::Resource,
         )
         .ok()

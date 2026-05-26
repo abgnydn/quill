@@ -36,12 +36,12 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "resources/quill-q4_k_m.gguf",
+      "resources/lfm2.5-350m-q4_k_m.gguf",
       "resources/qvac/*"
     ],
     "category": "Productivity",
     "shortDescription": "Local-first grammar assistant",
-    "longDescription": "Native desktop grammar checker combining Harper rules with a fine-tuned Gemma 3 270M LoRA. 100% on-device, no network calls.",
+    "longDescription": "Native desktop grammar checker combining Harper rules with a fine-tuned LiquidAI LFM2.5-350M LoRA. 100% on-device, no network calls.",
     "macOS": {
       "minimumSystemVersion": "13.0",
       "frameworks": [],

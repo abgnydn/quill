@@ -18,9 +18,13 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, LlamaLoraAdapter, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 
-/// Gemma 3 chat template — matches the format used in `train/scripts/train.py`.
+/// LFM2.5 ChatML template. `<|startoftext|>` BOS is prepended by
+/// `AddBos::Always` at tokenize time, so we don't include it here.
 const PROMPT_TEMPLATE: &str =
-    "<start_of_turn>user\n{src}<end_of_turn>\n<start_of_turn>model\n";
+    "<|im_start|>user\n{src}<|im_end|>\n<|im_start|>assistant\n";
+
+/// Generation stop marker for LFM2.5 ChatML.
+const STOP_MARKER: &str = "<|im_end|>";
 
 /// Default editing instruction prepended to user text when no explicit
 /// instruction is supplied.
@@ -107,7 +111,7 @@ impl RewriteEngine {
 
     /// Streaming rewrite. `on_token` is invoked with each piece of newly
     /// generated text as it's decoded; the same accumulated text is also
-    /// returned at the end (with `<end_of_turn>` stripped). Callbacks are
+    /// returned at the end (with `<|im_end|>` stripped). Callbacks are
     /// invoked from the calling thread, in order, synchronously.
     pub fn rewrite_streaming<F>(
         &self,
@@ -173,7 +177,7 @@ impl RewriteEngine {
                 .model
                 .token_to_piece(token, &mut decoder, true, None)
                 .context("token_to_piece")?;
-            if piece.contains("<end_of_turn>") {
+            if piece.contains(STOP_MARKER) {
                 break;
             }
             out.push_str(&piece);
@@ -185,6 +189,6 @@ impl RewriteEngine {
             n_cur += 1;
         }
 
-        Ok(out.replace("<end_of_turn>", "").trim().to_string())
+        Ok(out.replace(STOP_MARKER, "").trim().to_string())
     }
 }
