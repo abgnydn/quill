@@ -46,6 +46,31 @@ pub const DENIED_BUNDLE_PREFIXES: &[&str] = &[
     "com.jetbrains.",
 ];
 
+/// Browsers expose URL bars and tons of incidental single-line `<input>`
+/// elements as `AXTextField`. None of those are prose. In any browser
+/// bundle we engage only on `AXTextArea` (where `<textarea>` and most
+/// contenteditable rich-text composers — Gmail, Twitter, LinkedIn, etc. —
+/// surface), and skip `AXTextField` outright. The handful of `<input>`
+/// fields that *are* prose-worthy (rare) lose linting; the tradeoff is
+/// 100% URL bar / search bar / address field suppression in every browser.
+pub const BROWSER_BUNDLES: &[&str] = &[
+    "com.apple.Safari",
+    "com.apple.SafariTechnologyPreview",
+    "com.google.Chrome",
+    "com.google.Chrome.canary",
+    "com.brave.Browser",
+    "com.brave.Browser.beta",
+    "com.brave.Browser.nightly",
+    "com.microsoft.edgemac",
+    "org.mozilla.firefox",
+    "org.mozilla.firefoxdeveloperedition",
+    "company.thebrowser.Browser",   // Arc
+    "com.vivaldi.Vivaldi",
+    "com.operasoftware.Opera",
+    "ru.yandex.desktop.yandex-browser",
+    "com.theduckduckgo.macos.browser",
+];
+
 /// Substrings (case-insensitive) in `AXRoleDescription` that signal a URL
 /// bar / search box even when role+subrole don't. Chrome/Brave/Edge tag
 /// the omnibox as "address and search field"; Safari uses similar text.
@@ -94,6 +119,16 @@ pub fn is_engageable(
         }
     }
 
+    // Browser-specific rule: AXTextField in any browser is almost always
+    // a URL bar, search overlay, or incidental web form input — none worth
+    // linting. AXTextArea (real <textarea> + contenteditable composers)
+    // still engages.
+    if let Some(bid) = bundle_id {
+        if BROWSER_BUNDLES.iter().any(|b| *b == bid) && role == Some("AXTextField") {
+            return false;
+        }
+    }
+
     match role {
         Some("AXSecureTextField") => false,
         Some("AXTextArea") | Some("AXTextField") => true,
@@ -133,6 +168,42 @@ mod tests {
     fn denies_safari_url_bar_via_subrole() {
         assert!(!is_engageable(Some("AXTextField"), Some("AXSearchField"), None, Some("com.apple.Safari")));
         assert!(!is_engageable(Some("AXTextField"), Some("AXSearchField"), None, Some("com.google.Chrome")));
+    }
+
+    #[test]
+    fn denies_url_bar_in_every_browser_via_bundle_rule() {
+        // Even with empty role_description / no subrole signal — the
+        // browser-bundle + AXTextField combo is enough to block.
+        for bid in [
+            "com.apple.Safari",
+            "com.google.Chrome",
+            "com.brave.Browser",
+            "com.microsoft.edgemac",
+            "org.mozilla.firefox",
+            "company.thebrowser.Browser",
+            "com.vivaldi.Vivaldi",
+        ] {
+            assert!(
+                !is_engageable(Some("AXTextField"), None, None, Some(bid)),
+                "url bar leaked in {bid}"
+            );
+        }
+    }
+
+    #[test]
+    fn still_engages_on_textarea_in_browsers() {
+        // Gmail / Twitter / LinkedIn / Reddit composers surface as
+        // AXTextArea via contenteditable. Those must keep linting.
+        for bid in [
+            "com.apple.Safari",
+            "com.google.Chrome",
+            "com.brave.Browser",
+        ] {
+            assert!(
+                is_engageable(Some("AXTextArea"), None, None, Some(bid)),
+                "composer skipped in {bid}"
+            );
+        }
     }
 
     #[test]
