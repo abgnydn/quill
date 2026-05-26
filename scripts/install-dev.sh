@@ -9,12 +9,19 @@
 #
 #   Usage:
 #       ./scripts/install-dev.sh                # uses the existing build
-#       ./scripts/install-dev.sh --build        # rebuild first
+#       ./scripts/install-dev.sh --build        # full release rebuild (~15 min)
+#       ./scripts/install-dev.sh --fast         # fast dev-release rebuild (~3 min)
 #       ./scripts/install-dev.sh --build --tail # rebuild then tail the log
 #
 #   Codesigning note: we ad-hoc sign with `-` so the binary's identifier
 #   stays `io.quill.app` across rebuilds (Tauri's default per-build random
 #   identifier invalidates TCC grants).
+#
+#   --fast vs --build:
+#     --fast  uses [profile.release-dev]: opt-level=1, codegen-units=16,
+#             no LTO, no strip, no DMG bundling. Use during iteration.
+#     --build uses [profile.release]:     opt-level=z, codegen-units=1,
+#             full LTO, stripped, DMG generated. Use for ship builds.
 
 set -euo pipefail
 
@@ -76,21 +83,39 @@ $(du -sh "$QVAC_RESOURCES" | cut -f1)"
 }
 
 BUILD=0
+FAST=0
 TAIL=0
 for arg in "$@"; do
   case "$arg" in
     --build) BUILD=1 ;;
+    --fast)  FAST=1 ;;
     --tail)  TAIL=1 ;;
     -h|--help)
-      sed -n '2,18p' "$0"; exit 0 ;;
+      sed -n '2,25p' "$0"; exit 0 ;;
     *) echo "unknown arg: $arg"; exit 2 ;;
   esac
 done
 
+if [[ "$BUILD" -eq 1 && "$FAST" -eq 1 ]]; then
+  echo "[quill] --build and --fast are mutually exclusive" >&2
+  exit 2
+fi
+
 if [[ "$BUILD" -eq 1 ]]; then
   prepare_qvac
-  echo "[quill] building release with llm + overlay features…"
+  echo "[quill] building release with llm + overlay features (full opt, ~15 min)…"
   ( cd "$REPO_ROOT/shell/src-tauri" && cargo tauri build --features llm,overlay )
+fi
+
+if [[ "$FAST" -eq 1 ]]; then
+  prepare_qvac
+  echo "[quill] FAST build (profile=release-dev, no DMG, ~3 min)…"
+  ( cd "$REPO_ROOT/shell/src-tauri" && \
+    cargo tauri build --features llm,overlay --bundles app -- --profile release-dev )
+  # `--profile release-dev` makes cargo put the binary at target/release-dev/
+  # but Tauri's bundler looks at target/release/ for the .app it produces.
+  # Tauri 2 actually emits to target/<profile>/bundle/macos/. Adjust path.
+  BUILT_APP="$REPO_ROOT/shell/src-tauri/target/release-dev/bundle/macos/$APP_NAME"
 fi
 
 if [[ ! -d "$BUILT_APP" ]]; then

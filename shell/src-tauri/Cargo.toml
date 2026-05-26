@@ -65,3 +65,15 @@ lto = true
 opt-level = "z"
 panic = "abort"
 strip = true
+
+# Dev-loop release profile — same `release` directory layout so Tauri's
+# bundler picks it up, but with fast-compile knobs. Use via
+# `./scripts/install-dev.sh --fast` — ~3 min builds vs ~15 min for the
+# full size-optimized release profile above. Binary is ~10MB bigger,
+# which is fine for local iteration.
+[profile.release-dev]
+inherits = "release"
+codegen-units = 16
+lto = false
+opt-level = 1
+strip = false
