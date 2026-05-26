@@ -5,6 +5,7 @@
 
 pub mod apply;
 pub mod clipboard;
+pub mod engagement_policy;
 pub mod focus_tracker;
 pub mod mouse_arbiter;
 pub mod window;

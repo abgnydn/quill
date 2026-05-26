@@ -11,11 +11,13 @@ use std::time::Duration;
 
 use accessibility_sys::{
     AXIsProcessTrustedWithOptions, AXUIElementCopyAttributeValue,
-    AXUIElementCopyParameterizedAttributeValue, AXUIElementCreateSystemWide, AXUIElementRef,
-    AXValueCreate, AXValueGetValue, AXValueRef, kAXBoundsForRangeParameterizedAttribute,
-    kAXErrorSuccess, kAXFocusedApplicationAttribute, kAXFocusedUIElementAttribute,
-    kAXPositionAttribute, kAXSizeAttribute, kAXTrustedCheckOptionPrompt, kAXValueAttribute,
-    kAXValueTypeCFRange, kAXValueTypeCGPoint, kAXValueTypeCGRect, kAXValueTypeCGSize,
+    AXUIElementCopyParameterizedAttributeValue, AXUIElementCreateSystemWide, AXUIElementGetPid,
+    AXUIElementRef, AXValueCreate, AXValueGetValue, AXValueRef,
+    kAXBoundsForRangeParameterizedAttribute, kAXErrorSuccess, kAXFocusedApplicationAttribute,
+    kAXFocusedUIElementAttribute, kAXPositionAttribute, kAXRoleAttribute,
+    kAXRoleDescriptionAttribute, kAXSizeAttribute, kAXSubroleAttribute,
+    kAXTrustedCheckOptionPrompt, kAXValueAttribute, kAXValueTypeCFRange, kAXValueTypeCGPoint,
+    kAXValueTypeCGRect, kAXValueTypeCGSize,
 };
 use core_foundation::base::{CFIndex, CFRange, CFType};
 use core_graphics::geometry::CGRect;
@@ -115,6 +117,7 @@ fn run(app: AppHandle) {
     let mut linter = fresh_linter();
     let mut last_bounds: Option<FocusBounds> = None;
     let mut last_text_hash: u64 = 0;
+    let mut last_skip: Option<SkipContext> = None;
     let mut tick = 0u32;
 
     loop {
@@ -122,8 +125,27 @@ fn run(app: AppHandle) {
         tick = tick.wrapping_add(1);
 
         let snapshot = focused_snapshot(system_wide);
-        let bounds_changed = snapshot.as_ref().map(|s| &s.bounds) != last_bounds.as_ref();
-        let text_hash = snapshot
+
+        // Log on every NEW skip context — gives users visible evidence that
+        // the engagement filter is working without spamming on every poll.
+        if let SnapshotResult::Skip(ctx) = &snapshot {
+            if last_skip.as_ref() != Some(ctx) {
+                eprintln!(
+                    "[quill] focus skipped: bundle={:?} role={:?} subrole={:?} role_desc={:?}",
+                    ctx.bundle_id, ctx.role, ctx.subrole, ctx.role_description
+                );
+                last_skip = Some(ctx.clone());
+            }
+        } else {
+            last_skip = None;
+        }
+
+        let snap_opt = match snapshot {
+            SnapshotResult::Engage(s) => Some(s),
+            SnapshotResult::Skip(_) | SnapshotResult::Empty => None,
+        };
+        let bounds_changed = snap_opt.as_ref().map(|s| &s.bounds) != last_bounds.as_ref();
+        let text_hash = snap_opt
             .as_ref()
             .and_then(|s| s.text.as_deref())
             .map(simple_hash)
@@ -137,7 +159,7 @@ fn run(app: AppHandle) {
             continue;
         }
 
-        let (bounds, text, elem_ref) = match snapshot {
+        let (bounds, text, elem_ref) = match snap_opt {
             Some(s) => (Some(s.bounds), s.text, s.elem),
             None => (None, None, std::ptr::null_mut()),
         };
@@ -212,12 +234,49 @@ struct FocusSnapshot {
     elem: AXUIElementRef,
 }
 
-fn focused_snapshot(system_wide: AXUIElementRef) -> Option<FocusSnapshot> {
-    let focused_app = copy_attr(system_wide, kAXFocusedApplicationAttribute)?;
+/// Identifies a focus context the engagement policy rejected. The run loop
+/// uses this for log-on-change diagnostics so users can see *why* an app
+/// was skipped without spamming the log on every poll.
+#[derive(Clone, PartialEq, Debug)]
+pub struct SkipContext {
+    pub bundle_id: Option<String>,
+    pub role: Option<String>,
+    pub subrole: Option<String>,
+    pub role_description: Option<String>,
+}
+
+enum SnapshotResult {
+    Engage(FocusSnapshot),
+    Skip(SkipContext),
+    Empty,
+}
+
+fn focused_snapshot(system_wide: AXUIElementRef) -> SnapshotResult {
+    let Some(focused_app) = copy_attr(system_wide, kAXFocusedApplicationAttribute) else {
+        return SnapshotResult::Empty;
+    };
+    let bundle_id = bundle_id_for_app(focused_app as AXUIElementRef);
     let focused_elem = copy_attr(focused_app as AXUIElementRef, kAXFocusedUIElementAttribute);
     unsafe { CFRelease(focused_app) };
-    let focused_elem = focused_elem?;
+    let Some(focused_elem) = focused_elem else {
+        return SnapshotResult::Empty;
+    };
     let elem_ref = focused_elem as AXUIElementRef;
+
+    // Gate: only engage on text-input roles in apps Grammarly would engage in.
+    // Terminals, URL bars, password fields, code editors, launchers → drop.
+    let role = copy_string_attr(elem_ref, kAXRoleAttribute);
+    let subrole = copy_string_attr(elem_ref, kAXSubroleAttribute);
+    let role_description = copy_string_attr(elem_ref, kAXRoleDescriptionAttribute);
+    if !crate::overlay::engagement_policy::is_engageable(
+        role.as_deref(),
+        subrole.as_deref(),
+        role_description.as_deref(),
+        bundle_id.as_deref(),
+    ) {
+        unsafe { CFRelease(focused_elem) };
+        return SnapshotResult::Skip(SkipContext { bundle_id, role, subrole, role_description });
+    }
 
     let pos = copy_axvalue_cgpoint(elem_ref, kAXPositionAttribute);
     let size = copy_axvalue_cgsize(elem_ref, kAXSizeAttribute);
@@ -229,7 +288,7 @@ fn focused_snapshot(system_wide: AXUIElementRef) -> Option<FocusSnapshot> {
         (Some(p), Some(s)) => (p, s),
         _ => {
             unsafe { CFRelease(focused_elem) };
-            return None;
+            return SnapshotResult::Empty;
         }
     };
     let b = FocusBounds {
@@ -240,9 +299,9 @@ fn focused_snapshot(system_wide: AXUIElementRef) -> Option<FocusSnapshot> {
     };
     if !is_plausible_text_field(&b) {
         unsafe { CFRelease(focused_elem) };
-        return None;
+        return SnapshotResult::Empty;
     }
-    Some(FocusSnapshot {
+    SnapshotResult::Engage(FocusSnapshot {
         bounds: b,
         text,
         elem: elem_ref,
@@ -308,6 +367,22 @@ pub fn bounds_for_range(
         w: rect.size.width,
         h: rect.size.height,
     })
+}
+
+/// Resolve the bundle identifier of the app behind an AX application
+/// element via pid → NSRunningApplication. Returns None for processes
+/// without a registered bundle (rare; daemons, helper procs).
+fn bundle_id_for_app(app_elem: AXUIElementRef) -> Option<String> {
+    use objc2_app_kit::NSRunningApplication;
+    // pid_t is i32 on macOS; we're cfg-gated to macOS only.
+    let mut pid: i32 = 0;
+    let err = unsafe { AXUIElementGetPid(app_elem, &mut pid) };
+    if err != kAXErrorSuccess || pid <= 0 {
+        return None;
+    }
+    let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid)?;
+    let s = app.bundleIdentifier()?;
+    Some(s.to_string())
 }
 
 /// Read a CFString-valued attribute off the focused element. Returns None
