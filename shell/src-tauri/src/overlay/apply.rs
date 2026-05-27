@@ -76,12 +76,24 @@ pub fn apply_with_strategy(
     replacement: &str,
 ) -> Result<ApplyStrategy, ApplyError> {
     let length = end.saturating_sub(start);
-    let system_wide = unsafe { AXUIElementCreateSystemWide() };
-    let app = copy_attr_ref(system_wide, kAXFocusedApplicationAttribute)
-        .ok_or(ApplyError::NoFocusedApp)?;
-    let elem = copy_attr_ref(app as AXUIElementRef, kAXFocusedUIElementAttribute);
-    unsafe { CFRelease(app) };
-    let elem = elem.ok_or(ApplyError::NoFocusedElement)? as AXUIElementRef;
+
+    // Prefer the cached engaged element from focus_tracker. Clicking our
+    // overlay popover activates Quill's app and shifts live AXUI focus
+    // away from the user's writing app — re-querying here would write to
+    // our own WKWebView. The cache holds the last text-field the focus
+    // tracker engaged on, which is the right target.
+    let elem = if let Some(saved) = crate::overlay::engaged_elem::current_handle() {
+        eprintln!("[quill][apply] using saved engaged elem");
+        saved as AXUIElementRef
+    } else {
+        eprintln!("[quill][apply] no saved elem — falling back to live AXUI query");
+        let system_wide = unsafe { AXUIElementCreateSystemWide() };
+        let app = copy_attr_ref(system_wide, kAXFocusedApplicationAttribute)
+            .ok_or(ApplyError::NoFocusedApp)?;
+        let elem = copy_attr_ref(app as AXUIElementRef, kAXFocusedUIElementAttribute);
+        unsafe { CFRelease(app) };
+        elem.ok_or(ApplyError::NoFocusedElement)? as AXUIElementRef
+    };
 
     // Step 1 — move the selection. We try this even before deciding which
     // text-write path to take, because the clipboard fallback needs the

@@ -134,6 +134,8 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
                 last_bounds = None;
                 last_text_hash = 0;
                 last_skip = None;
+                // Clear saved element so a stale handle doesn't outlive pause.
+                crate::overlay::engaged_elem::clear();
                 // Tell the overlay to hide.
                 let _ = app.emit_to(OVERLAY_LABEL, "focus-update", &FocusEvent {
                     bounds: None, text: None, lints: vec![],
@@ -210,8 +212,12 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
             })
             .collect();
 
+        // Transfer the AXUIElement handle into the shared engaged-elem cache
+        // so apply.rs can write to it even after the user clicks our overlay
+        // (which would shift live AXUI focus away from their text field).
+        // store() takes ownership of the retain — no CFRelease here.
         if !elem_ref.is_null() {
-            unsafe { CFRelease(elem_ref as core_foundation::base::CFTypeRef) };
+            crate::overlay::engaged_elem::store(elem_ref as *mut std::ffi::c_void);
         }
 
         let rects_resolved = lints.iter().filter(|l| l.rect.is_some()).count();

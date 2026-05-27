@@ -152,22 +152,20 @@ pub fn run() {
                     app: &tauri::AppHandle<R>,
                     paused: bool,
                 ) -> tauri::Result<tauri::menu::Menu<R>> {
-                    let pause_label = if paused { "Resume Quill" } else { "Pause Quill" };
+                    let pause_label = if paused { "Resume Nib" } else { "Pause Nib" };
                     let pause = MenuItem::with_id(
                         app, "pause-toggle", pause_label, true, None::<&str>,
                     )?;
                     let settings = MenuItem::with_id(
-                        app, "open-settings", "Open Settings…", true, None::<&str>,
+                        app, "open-settings", "Settings…", true, None::<&str>,
                     )?;
-                    let show = MenuItem::with_id(app, "show", "Show Quill", true, None::<&str>)?;
                     let train = MenuItem::with_id(
                         app, "train", "Train personal adapter…", true, None::<&str>,
                     )?;
                     let sep1 = tauri::menu::PredefinedMenuItem::separator(app)?;
-                    let sep2 = tauri::menu::PredefinedMenuItem::separator(app)?;
-                    let quit = MenuItem::with_id(app, "quit", "Quit Quill", true, Some("Cmd+Q"))?;
+                    let quit = MenuItem::with_id(app, "quit", "Quit Nib", true, Some("Cmd+Q"))?;
                     Menu::with_items(
-                        app, &[&pause, &settings, &sep1, &show, &train, &sep2, &quit],
+                        app, &[&pause, &settings, &train, &sep1, &quit],
                     )
                 }
 
@@ -176,7 +174,7 @@ pub fn run() {
 
                 let config_for_tray = config.clone();
                 let _tray = TrayIconBuilder::with_id("main")
-                    .tooltip("Quill — local-first grammar")
+                    .tooltip("Nib — local-first grammar")
                     .menu(&menu)
                     .icon(app.default_window_icon().expect("icon").clone())
                     .icon_as_template(true)

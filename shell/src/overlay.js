@@ -176,6 +176,11 @@
   };
 
   // ---- hot regions (driver for the Rust mouse arbiter) ----------------
+  // When the popover is visible, we add a *bridge* rect that fully encloses
+  // the active underline + the popover + the gap between them. Without this,
+  // the cursor briefly enters click-through territory while traveling
+  // between the two, the mouse arbiter fires `cursor-leave-hot`, and the
+  // popover dismisses before the user can click a suggestion.
   const pushHotRegions = () => {
     const rects = [];
     underlinesEl.querySelectorAll(".underline").forEach((u) => {
@@ -183,8 +188,20 @@
       rects.push({ x: r.left - 2, y: r.top - 4, w: r.width + 4, h: r.height + 12 });
     });
     if (popover.classList.contains("visible")) {
-      const r = popover.getBoundingClientRect();
-      rects.push({ x: r.left - 4, y: r.top - 4, w: r.width + 8, h: r.height + 8 });
+      const p = popover.getBoundingClientRect();
+      rects.push({ x: p.left - 4, y: p.top - 4, w: p.width + 8, h: p.height + 8 });
+      // Bridge: span from the active underline to the popover so the cursor
+      // can travel between them without leaving hot territory.
+      if (activeLintIdx >= 0 && currentLints[activeLintIdx]) {
+        const ar = currentLints[activeLintIdx].rect;
+        if (ar && ar.w > 0 && ar.h > 0) {
+          const x0 = Math.min(p.left, ar.x) - 8;
+          const y0 = Math.min(p.top, ar.y) - 8;
+          const x1 = Math.max(p.right, ar.x + ar.w) + 8;
+          const y1 = Math.max(p.bottom, ar.y + ar.h) + 8;
+          rects.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 });
+        }
+      }
     }
     if (fallbackEl.classList.contains("visible")) {
       const r = fallbackEl.getBoundingClientRect();
@@ -250,9 +267,13 @@
     requestAnimationFrame(pushHotRegions);
   };
 
+  // Hide delay was 220ms — too tight for slow cursor users + gave the
+  // mouse arbiter time to dismiss before the cursor finished traveling
+  // between the underline and popover. 600ms is the standard "tooltip
+  // intent" delay in modern UI libs.
   const scheduleHide = () => {
     clearTimeout(hoverHideTimer);
-    hoverHideTimer = setTimeout(hidePopover, 220);
+    hoverHideTimer = setTimeout(hidePopover, 600);
   };
   const cancelHide = () => clearTimeout(hoverHideTimer);
 
