@@ -32,26 +32,8 @@ pub mod overlay;
 pub use state::{CheckerState, RewriteState};
 pub use wire::{check_text_with, Capabilities, WireLint, WireSuggestion};
 
-/// Tray-only duplicate of commands::format_unix_rfc3339 (kept private to
-/// commands.rs so we don't widen its public API). Same algorithm.
-fn format_unix_rfc3339_for_tray(secs: u64) -> String {
-    let days = (secs / 86400) as i64;
-    let time_of_day = secs % 86400;
-    let hh = time_of_day / 3600;
-    let mm = (time_of_day % 3600) / 60;
-    let ss = time_of_day % 60;
-    let z = days + 719468;
-    let era = if z >= 0 { z } else { z - 146096 } / 146097;
-    let doe = (z - era * 146097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    let y_adj = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = y_adj + (m <= 2) as i64;
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, hh, mm, ss)
-}
+// (format_unix_rfc3339 lives in commands.rs; tray menu uses it via
+//  `commands::format_unix_rfc3339`.)
 
 /// Global-hotkey handler: grab the user's current selection via simulated
 /// ⌘C, run the LLM rewrite on it, paste the result back via ⌘V. Runs on
@@ -255,7 +237,7 @@ pub fn run() {
                                 .duration_since(std::time::UNIX_EPOCH)
                                 .map(|d| d.as_secs())
                                 .unwrap_or(0) + minutes * 60;
-                            let until = format_unix_rfc3339_for_tray(secs);
+                            let until = commands::format_unix_rfc3339(secs);
                             if let Err(e) = config_for_tray.update(|c| {
                                 c.paused = false;
                                 c.pause_until = Some(until.clone());

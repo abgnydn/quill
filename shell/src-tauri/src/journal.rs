@@ -1,6 +1,6 @@
 //! Local, private edit journal.
 //!
-//! Every time the user accepts or dismisses a Quill suggestion (whether a
+//! Every time the user accepts or dismisses a Nib suggestion (whether a
 //! Harper-derived chip or an AI rewrite), we append one JSON line to a
 //! file under `~/Library/Application Support/Quill/journal.jsonl`. The
 //! file never leaves the device unless the user explicitly exports it.

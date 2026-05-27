@@ -235,90 +235,9 @@ html, body {
 }
 .pop-why-body[hidden] { display: none; }
 
-.pop-ai {
-  margin-top: 9px;
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  padding-top: 9px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.pop-ai-label {
-  font-size: 10.5px;
-  color: var(--fg-mute);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.ai-btn {
-  background: var(--bg-chip-h);
-  color: #0f1115;
-  border: none;
-  padding: 4.5px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  border-radius: var(--radius-chip);
-  cursor: pointer;
-  letter-spacing: 0.03em;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.ai-btn:hover { filter: brightness(1.08); }
-.ai-btn:disabled { opacity: 0.6; cursor: progress; }
-.spinner {
-  width: 10px; height: 10px;
-  border: 1.5px solid rgba(15, 17, 21, 0.3);
-  border-top-color: #0f1115;
-  border-radius: 50%;
-  animation: spin 0.7s linear infinite;
-  display: inline-block;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.ai-out {
-  margin-top: 8px;
-  font-family: ui-monospace, monospace;
-  font-size: 11.5px;
-  line-height: 1.45;
-  background: rgba(0, 0, 0, 0.32);
-  padding: 8px 10px;
-  border-radius: 6px;
-  word-wrap: break-word;
-  display: none;
-  border-left: 2px solid var(--accent);
-}
-.ai-out.streaming::after {
-  content: "▍";
-  display: inline-block;
-  margin-left: 2px;
-  color: var(--accent);
-  animation: caret-blink 0.7s steps(2) infinite;
-}
-@keyframes caret-blink { to { opacity: 0; } }
-
-/* Inline diff styling for the AI output. */
-.ai-out del {
-  background: rgba(255, 107, 107, 0.18);
-  color: #ff9a9a;
-  text-decoration: line-through;
-  text-decoration-color: rgba(255, 107, 107, 0.7);
-  padding: 0 2px;
-  border-radius: 3px;
-}
-.ai-out ins {
-  background: rgba(126, 231, 135, 0.18);
-  color: #b5f0bb;
-  text-decoration: none;
-  padding: 0 2px;
-  border-radius: 3px;
-}
-.ai-out.visible { display: block; }
-.ai-out .row {
-  margin-top: 7px;
-  display: flex;
-  gap: 4px;
-}
+/* .pop-ai / .ai-btn / .ai-out / .spinner blocks removed in v1.4.0 —
+   AI rewrite moved out of the hover popover in v1.1.2 and into the
+   dedicated #rewrite-panel (styled separately below). */
 
 /* === Fallback summary panel (when AXUI doesn't give per-word rects) ====== */
 #fallback {

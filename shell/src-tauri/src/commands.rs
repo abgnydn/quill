@@ -380,7 +380,9 @@ pub fn pause_for_minutes(
 }
 
 /// Inverse Hinnant date algorithm — UNIX seconds → "YYYY-MM-DDTHH:MM:SSZ".
-fn format_unix_rfc3339(secs: u64) -> String {
+/// `pub` so the tray menu's pause-for-N-minutes handler in lib.rs can
+/// reuse it without duplicating the algorithm.
+pub fn format_unix_rfc3339(secs: u64) -> String {
     let days = (secs / 86400) as i64;
     let time_of_day = secs % 86400;
     let hh = time_of_day / 3600;

@@ -21,16 +21,8 @@
   const popSuggs = $("pop-suggs");
   const popWhyToggle = $("pop-why-toggle");
   const popWhyBody = $("pop-why-body");
-  // AI rewrite UI moved out of the hover popover in v1.1.2 — selection
-  // trigger + dedicated rewrite panel now handle that flow. These DOM
-  // queries return null (no-op handlers below); kept for symmetry.
-  const aiBtn = $("ai-btn");
-  const aiBtnLabel = $("ai-btn-label");
-  const aiBtnSpinner = $("ai-btn-spinner");
-  const aiOut = $("ai-out");
-  const aiText = $("ai-text");
-  const aiApply = $("ai-apply");
-  const aiDismiss = $("ai-dismiss");
+  // (AI rewrite UI moved out of the hover popover in v1.1.2 — handled
+  // entirely by the selection trigger + dedicated rewrite panel below.)
   // Selection trigger + rewrite panel — Grammarly-style separate surface
   // for selection-scoped rewrites (independent of the hover popover).
   const selTrigger = $("sel-trigger");
@@ -267,7 +259,6 @@
   // ---- popover --------------------------------------------------------
   const hidePopover = () => {
     popover.classList.remove("visible");
-    if (aiOut) aiOut.classList.remove("visible");
     activeLintIdx = -1;
     requestAnimationFrame(pushHotRegions);
   };
@@ -289,7 +280,6 @@
     popSuggs.innerHTML = (lint.suggestions || [])
       .map((s, j) => renderChip(s, lintIdx, j))
       .join("");
-    if (aiOut) aiOut.classList.remove("visible");
 
     // Why? — collapsed by default; click expands an explanation block.
     popWhyBody.textContent = whyFor(lint);
@@ -494,152 +484,10 @@
     hidePopover();
   });
 
-  // ---- AI rewrite (streamed, sentence-scoped) ------------------------
+  // ---- AI rewrite session id (used by selection rewrite panel) -------
   function makeSession() {
     return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
   }
-
-  /**
-   * Find the sentence/paragraph boundaries around character index `pos`
-   * in `text`. Returns { start, end } where text.slice(start, end) is the
-   * smallest natural unit containing pos. Sentence break = . ? ! followed
-   * by whitespace; paragraph break = newline. Caps the slice at 800 chars
-   * so we never send a wall of text to the model.
-   */
-  function sentenceAround(text, pos) {
-    const chars = [...text]; // unicode-safe
-    if (!chars.length) return { start: 0, end: 0 };
-    pos = Math.max(0, Math.min(pos, chars.length));
-
-    let s = pos;
-    while (s > 0) {
-      const c = chars[s - 1];
-      if (c === "\n") break;
-      if ((c === "." || c === "?" || c === "!") &&
-          (s >= chars.length || /\s/.test(chars[s] || ""))) break;
-      s--;
-    }
-    while (s < chars.length && /\s/.test(chars[s])) s++;
-
-    let e = pos;
-    while (e < chars.length) {
-      const c = chars[e];
-      if (c === "\n") break;
-      if ((c === "." || c === "?" || c === "!")) {
-        const next = chars[e + 1];
-        if (next === undefined || /\s/.test(next)) { e++; break; }
-      }
-      e++;
-    }
-    if (e - s > 800) e = s + 800;
-    return { start: s, end: e };
-  }
-
-  // Where in the field the most recent rewrite was scoped — used by aiApply
-  // to write the replacement back over the same character range.
-  let lastRewriteRange = null;
-
-  if (aiBtn) aiBtn.addEventListener("click", async () => {
-    ping("ai-rewrite-click", currentLints.length,
-      `text_len=${currentText.length} activeLint=${activeLintIdx}`);
-    if (!currentText) {
-      ping("ai-rewrite-skip", 0, "no currentText");
-      return;
-    }
-
-    // Scope: the sentence containing the active lint. Falls back to whole
-    // field if there's no active lint (shouldn't happen since the AI button
-    // lives in the popover, but be defensive).
-    const chars = [...currentText];
-    let range;
-    if (activeLintIdx >= 0 && currentLints[activeLintIdx]) {
-      const l = currentLints[activeLintIdx];
-      range = sentenceAround(currentText, l.start);
-      // Guarantee the lint's span is inside the rewrite range.
-      range.start = Math.min(range.start, l.start);
-      range.end = Math.max(range.end, l.end);
-    } else {
-      range = { start: 0, end: chars.length };
-    }
-    const sourceSlice = chars.slice(range.start, range.end).join("");
-    if (!sourceSlice.trim()) {
-      ping("ai-rewrite-skip", 0, "empty slice");
-      return;
-    }
-    ping("ai-rewrite-scope", range.end - range.start,
-      `start=${range.start} end=${range.end}`);
-
-    aiBtn.disabled = true;
-    aiBtnLabel.textContent = "streaming";
-    aiBtnSpinner.style.display = "inline-block";
-    aiOut.classList.add("visible");
-    aiText.textContent = "";
-    aiText.classList.add("streaming");
-
-    const session = makeSession();
-    const unlisten = await listen("rewrite-token", (evt) => {
-      const p = evt.payload || {};
-      if (p.session !== session) return;
-      if (p.done) {
-        aiText.classList.remove("streaming");
-        return;
-      }
-      if (p.delta) {
-        aiText.textContent += p.delta;
-        requestAnimationFrame(pushHotRegions);
-      }
-    });
-
-    try {
-      const out = await invoke("rewrite", {
-        text: sourceSlice, instruction: null, session,
-      });
-      lastRewrite = String(out || "");
-      lastRewriteRange = { ...range };
-      if (!aiText.textContent) aiText.textContent = lastRewrite;
-      // Diff against the slice (not the whole field) so the user sees
-      // exactly what the model proposed for the scoped sentence.
-      if (sourceSlice && lastRewrite && sourceSlice !== lastRewrite) {
-        aiText.innerHTML = renderDiffHtml(sourceSlice, lastRewrite);
-      }
-    } catch (err) {
-      aiText.textContent = "error: " + String(err);
-      ping("ai-rewrite-err", 0, String(err));
-    } finally {
-      unlisten();
-      aiText.classList.remove("streaming");
-      aiBtn.disabled = false;
-      aiBtnLabel.textContent = "Rewrite with AI";
-      aiBtnSpinner.style.display = "none";
-      requestAnimationFrame(pushHotRegions);
-      ping("ai-rewrite-done", lastRewrite.length, "");
-    }
-  });
-  if (aiApply) aiApply.addEventListener("click", async () => {
-    if (!lastRewrite || !currentText || !lastRewriteRange) return;
-    const { start, end } = lastRewriteRange;
-    const chars = [...currentText];
-    const applied =
-      chars.slice(0, start).join("") + lastRewrite + chars.slice(end).join("");
-    try {
-      await invoke("apply_suggestion", {
-        start, end,
-        replacement: lastRewrite,
-        context: {
-          kind: "rewrite_apply",
-          source_text: currentText,
-          applied_text: applied,
-        },
-      });
-      hidePopover();
-    } catch (err) {
-      ping("rewrite-apply-err", 0, String(err));
-    }
-  });
-  if (aiDismiss) aiDismiss.addEventListener("click", () => {
-    if (aiOut) aiOut.classList.remove("visible");
-    requestAnimationFrame(pushHotRegions);
-  });
 
   // ---- inline underline rendering ------------------------------------
   const FAT = 14;  // hover-target height (visible wavy stroke is 4px)
@@ -736,7 +584,6 @@
       `lints=${currentLints.length} inline=${inline} text_len=${currentText.length}`);
 
     if (lastRewrite && currentText && lastRewrite !== currentText) {
-      if (aiOut) aiOut.classList.remove("visible");
       lastRewrite = "";
     }
     if (!currentFieldBounds) fallbackEl.classList.remove("visible");

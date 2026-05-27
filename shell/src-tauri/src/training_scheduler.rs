@@ -10,7 +10,7 @@
 //! re-trigger immediately.
 //!
 //! Hot-reload of the engine is NOT done here — the user will see the new
-//! adapter the next time they relaunch Quill. v0.7 will swap the engine
+//! adapter the next time they relaunch Nib. v0.7 will swap the engine
 //! atomically in place.
 
 #![cfg(feature = "llm")]

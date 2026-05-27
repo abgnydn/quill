@@ -1,9 +1,9 @@
-//! Persisted Quill settings — lives at
+//! Persisted Nib settings — lives at
 //! `~/Library/Application Support/Quill/config.json`.
 //!
 //! Kept tiny and serde-driven. Defaults are sane on first launch so a fresh
 //! install never sees a missing-file error. Writes are atomic (tempfile +
-//! rename) so a crashing Quill can't leave a half-written config.
+//! rename) so a crashing Nib can't leave a half-written config.
 
 use std::collections::HashMap;
 use std::fs;
