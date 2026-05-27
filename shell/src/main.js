@@ -433,9 +433,187 @@ async function pushAutoRetrain() {
 autoRetrain.addEventListener("change", pushAutoRetrain);
 autoThreshold.addEventListener("change", pushAutoRetrain);
 
+// ---- Settings panel (dictionary + pause + per-app overrides) ----------
+const settingsToast = document.getElementById("settings-toast");
+const pauseToggle = document.getElementById("pause-toggle");
+const pauseSubtitle = document.getElementById("pause-subtitle");
+const dictInput = document.getElementById("dict-input");
+const dictAddBtn = document.getElementById("dict-add");
+const dictList = document.getElementById("dict-list");
+const appBundleInput = document.getElementById("app-bundle-input");
+const appKindSelect = document.getElementById("app-kind-select");
+const appAddBtn = document.getElementById("app-add");
+const appsTable = document.getElementById("apps-table");
+
+let settingsToastTimer = null;
+function flashToast(msg, isError = false) {
+  if (!settingsToast) return;
+  settingsToast.textContent = msg;
+  settingsToast.classList.remove("hidden");
+  settingsToast.classList.toggle("error", !!isError);
+  if (settingsToastTimer) clearTimeout(settingsToastTimer);
+  settingsToastTimer = setTimeout(() => {
+    settingsToast.classList.add("hidden");
+  }, 3500);
+}
+
+const PAUSED_SUBTITLE = "Overlay is silent. Tray icon shows the same state.";
+const ACTIVE_SUBTITLE = "Overlay watches focused text fields normally.";
+
+function renderPause(paused) {
+  pauseToggle.checked = !!paused;
+  pauseSubtitle.textContent = paused ? PAUSED_SUBTITLE : ACTIVE_SUBTITLE;
+}
+
+function renderDict(words) {
+  if (!Array.isArray(words) || words.length === 0) {
+    dictList.innerHTML =
+      `<div class="settings-empty">No words yet. Add names/jargon Quill shouldn't flag.</div>`;
+    return;
+  }
+  dictList.innerHTML = words
+    .map(
+      (w) => `<div class="dict-item">
+        <span class="dict-word">${escapeHtml(w)}</span>
+        <button class="dict-remove" data-word="${escapeHtml(w)}" title="Remove">Remove</button>
+      </div>`
+    )
+    .join("");
+  dictList.querySelectorAll(".dict-remove").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const word = btn.dataset.word;
+      try {
+        const updated = await invoke("dictionary_remove", { word });
+        renderDict(updated);
+      } catch (e) {
+        flashToast(`remove failed: ${e}`, true);
+      }
+    });
+  });
+}
+
+const OVERRIDE_LABEL = {
+  force_allow: "Force Allow",
+  force_deny: "Force Deny",
+};
+
+function renderAppOverrides(overrides) {
+  const entries = Object.entries(overrides || {}).sort(([a], [b]) =>
+    a.localeCompare(b)
+  );
+  if (entries.length === 0) {
+    appsTable.innerHTML =
+      `<div class="settings-empty">No per-app overrides yet.</div>`;
+    return;
+  }
+  appsTable.innerHTML = entries
+    .map(
+      ([bundleId, kind]) => `<div class="apps-row" data-kind="${escapeHtml(kind)}">
+        <span class="apps-bundle">${escapeHtml(bundleId)}</span>
+        <span class="apps-kind apps-kind-${escapeHtml(kind)}">${
+          OVERRIDE_LABEL[kind] || kind
+        }</span>
+        <button class="apps-remove" data-bundle="${escapeHtml(bundleId)}" title="Remove">Remove</button>
+      </div>`
+    )
+    .join("");
+  appsTable.querySelectorAll(".apps-remove").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const bundleId = btn.dataset.bundle;
+      try {
+        const cfg = await invoke("app_override_remove", { bundleId });
+        renderAppOverrides(cfg.app_overrides || {});
+      } catch (e) {
+        flashToast(`remove failed: ${e}`, true);
+      }
+    });
+  });
+}
+
+async function refreshDictionary() {
+  try {
+    const words = await invoke("dictionary_list");
+    renderDict(words);
+  } catch (e) {
+    flashToast(`dictionary load failed: ${e}`, true);
+  }
+}
+
+async function dictAdd() {
+  const word = (dictInput.value || "").trim();
+  if (!word) return;
+  try {
+    const updated = await invoke("dictionary_add", { word });
+    renderDict(updated);
+    dictInput.value = "";
+    dictInput.focus();
+  } catch (e) {
+    flashToast(`add failed: ${e}`, true);
+  }
+}
+
+async function appAdd() {
+  const bundleId = (appBundleInput.value || "").trim();
+  if (!bundleId) return;
+  const kind = appKindSelect.value || "force_allow";
+  try {
+    const cfg = await invoke("app_override_set", { bundleId, kind });
+    renderAppOverrides(cfg.app_overrides || {});
+    appBundleInput.value = "";
+    appBundleInput.focus();
+  } catch (e) {
+    flashToast(`add failed: ${e}`, true);
+  }
+}
+
+pauseToggle.addEventListener("change", async () => {
+  const paused = !!pauseToggle.checked;
+  try {
+    const newPaused = await invoke("pause_set", { paused });
+    renderPause(newPaused);
+  } catch (e) {
+    // Revert and warn.
+    pauseToggle.checked = !paused;
+    renderPause(!paused);
+    flashToast(`pause failed: ${e}`, true);
+  }
+});
+
+dictAddBtn.addEventListener("click", dictAdd);
+dictInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    dictAdd();
+  }
+});
+
+appAddBtn.addEventListener("click", appAdd);
+appBundleInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    appAdd();
+  }
+});
+
+// Reflect pause + per-app overrides from the full config snapshot. Sits
+// alongside refreshConfig() (which already calls config_get for the
+// auto-retrain block) instead of monkey-patching it.
+async function refreshSettings() {
+  try {
+    const c = await invoke("config_get");
+    renderPause(!!c.paused);
+    renderAppOverrides(c.app_overrides || {});
+  } catch (e) {
+    /* fail quiet on the poll loop — initial-load errors surface in console */
+  }
+}
+
 probeCapabilities();
 runCheck();
 refreshPersonal();
 refreshConfig();
+refreshDictionary();
+refreshSettings();
 setInterval(refreshPersonal, 5000);
 setInterval(refreshConfig, 7000);
+setInterval(refreshSettings, 7000);

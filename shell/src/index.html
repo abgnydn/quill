@@ -98,6 +98,68 @@
         — never sent anywhere. <a href="https://github.com/abgnydn/quill" target="_blank">how this works</a>
       </div>
     </section>
+    <section id="settings">
+      <h2 class="settings-title">Settings</h2>
+      <div id="settings-toast" class="settings-toast hidden"></div>
+
+      <fieldset class="settings-panel">
+        <legend>Pause Quill</legend>
+        <div class="pause-row">
+          <label class="toggle">
+            <input type="checkbox" id="pause-toggle" />
+            <span class="toggle-track"><span class="toggle-thumb"></span></span>
+            <span class="toggle-label">Pause Quill</span>
+          </label>
+          <div class="pause-subtitle" id="pause-subtitle">
+            Overlay watches focused text fields normally.
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="settings-panel">
+        <legend>Personal dictionary</legend>
+        <div class="dict-add-row">
+          <input
+            type="text"
+            id="dict-input"
+            placeholder="e.g. BitNet, abgnydn, Quill"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="dict-add">Add</button>
+        </div>
+        <div class="dict-list" id="dict-list">
+          <div class="settings-empty">
+            No words yet. Add names/jargon Quill shouldn't flag.
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset class="settings-panel">
+        <legend>Per-app overrides</legend>
+        <div class="apps-add-row">
+          <input
+            type="text"
+            id="app-bundle-input"
+            placeholder="bundle id, e.g. com.apple.Notes"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <select id="app-kind-select">
+            <option value="force_allow">Force Allow</option>
+            <option value="force_deny">Force Deny</option>
+          </select>
+          <button id="app-add">Add</button>
+        </div>
+        <div class="settings-help">
+          Bundle IDs look like com.apple.Notes, com.brave.Browser. Click the
+          Quill log to see what bundle an app reports.
+        </div>
+        <div class="apps-table" id="apps-table">
+          <div class="settings-empty">No per-app overrides yet.</div>
+        </div>
+      </fieldset>
+    </section>
     <script src="main.js"></script>
   </body>
 </html>
