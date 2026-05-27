@@ -322,6 +322,7 @@ pub fn run() {
             commands::check,
             commands::capabilities,
             commands::rewrite,
+            commands::rewrite_variants,
             commands::overlay_ping,
             commands::apply_suggestion,
             commands::overlay_set_hot_regions,

@@ -443,3 +443,38 @@ pub fn rewrite(
         Err("rewrite not available — build with --features llm".into())
     }
 }
+
+/// Generate up to `n` (default 3, capped at 5) independent rewrite
+/// alternatives. Variant 0 is deterministic greedy (identical to the single
+/// `rewrite` path); the rest use temp=0.7/top_p=0.9 with distinct RNG seeds.
+/// Wall-clock is ~N× single-rewrite latency since each variant builds its
+/// own context — the frontend should show a spinner.
+#[tauri::command]
+pub fn rewrite_variants(
+    text: &str,
+    instruction: Option<String>,
+    n: Option<u32>,
+    state: State<'_, RewriteState>,
+) -> Result<Vec<String>, String> {
+    #[cfg(feature = "llm")]
+    {
+        let n = n.unwrap_or(3).clamp(1, 5) as usize;
+        let lock = state
+            .engine
+            .lock()
+            .map_err(|e| format!("engine mutex poisoned: {e}"))?;
+        match &*lock {
+            Some(engine) => engine
+                .rewrite_variants(text, instruction.as_deref(), n)
+                .map_err(|e| format!("{e:#}")),
+            None => Err(
+                "no model loaded — set QUILL_MODEL=<path-to.gguf> before launching".into(),
+            ),
+        }
+    }
+    #[cfg(not(feature = "llm"))]
+    {
+        let _ = (text, instruction, n, state);
+        Err("rewrite_variants not available — build with --features llm".into())
+    }
+}

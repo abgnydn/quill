@@ -12,6 +12,107 @@ const rewriteText = document.getElementById("rewrite-text");
 const rewriteApply = document.getElementById("rewrite-apply");
 const rewriteDismiss = document.getElementById("rewrite-dismiss");
 
+// ---- Multi-variant rewrite UI (built dynamically — no HTML/CSS edits) ----
+// We inject the variants button into the same `.actions` row as the single
+// "Rewrite" button, plus a sibling panel after `#rewrite-output`. Styles are
+// injected via a single `<style>` tag so we can reuse the project's CSS
+// variables (--panel, --panel-2, --accent, --fg, --fg-dim, --radius).
+(function injectVariantsStyles() {
+  const style = document.createElement("style");
+  style.textContent = `
+    .rewrite-variants {
+      background: var(--panel-2);
+      border: 1px solid #2a3046;
+      border-left: 3px solid var(--accent);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .rewrite-variants.hidden { display: none; }
+    .rewrite-variants-list { display: flex; flex-direction: column; gap: 6px; }
+    .rewrite-variant-card {
+      font: 13px/1.55 ui-monospace, "SF Mono", Menlo, monospace;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      background: var(--panel);
+      border: 1px solid #2a3046;
+      border-radius: 6px;
+      padding: 8px 10px;
+      cursor: pointer;
+      text-align: left;
+      color: inherit;
+      transition: border-color 0.12s, background 0.12s;
+      width: 100%;
+    }
+    .rewrite-variant-card:hover,
+    .rewrite-variant-card:focus {
+      border-color: var(--accent);
+      background: #161a25;
+      outline: none;
+    }
+    .rewrite-variant-card .variant-tag {
+      display: inline-block;
+      font-family: ui-monospace, "SF Mono", monospace;
+      font-size: 10px;
+      color: var(--fg-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-right: 8px;
+      padding: 1px 5px;
+      background: #0c0e14;
+      border-radius: 3px;
+    }
+    .rewrite-variants-loading {
+      font-size: 12px;
+      color: var(--fg-dim);
+      padding: 8px 0;
+    }
+    .rewrite-variants-loading::after {
+      content: "▋";
+      animation: blink 0.7s steps(2) infinite;
+      color: var(--accent);
+      display: inline-block;
+      margin-left: 4px;
+    }
+  `;
+  document.head.appendChild(style);
+})();
+
+const rewriteVariantsBtn = document.createElement("button");
+rewriteVariantsBtn.id = "rewrite-variants-btn";
+rewriteVariantsBtn.textContent = "✦ Show 3 variants";
+rewriteVariantsBtn.title =
+  "Generate 3 alternative rewrites and pick the one you like (runs the model 3×)";
+rewriteVariantsBtn.disabled = true;
+rewriteBtn.insertAdjacentElement("afterend", rewriteVariantsBtn);
+
+const rewriteVariants = document.createElement("div");
+rewriteVariants.id = "rewrite-variants";
+rewriteVariants.className = "rewrite-variants hidden";
+const rewriteVariantsLabel = document.createElement("div");
+rewriteVariantsLabel.className = "rewrite-label";
+const rewriteVariantsTitle = document.createElement("span");
+rewriteVariantsTitle.textContent = "variants";
+const rewriteVariantsHint = document.createElement("span");
+rewriteVariantsHint.className = "hint";
+rewriteVariantsHint.style.marginLeft = "6px";
+rewriteVariantsLabel.appendChild(rewriteVariantsTitle);
+rewriteVariantsLabel.appendChild(rewriteVariantsHint);
+const rewriteVariantsList = document.createElement("div");
+rewriteVariantsList.id = "rewrite-variants-list";
+rewriteVariantsList.className = "rewrite-variants-list";
+const rewriteVariantsActions = document.createElement("div");
+rewriteVariantsActions.className = "rewrite-actions";
+const rewriteVariantsCancel = document.createElement("button");
+rewriteVariantsCancel.textContent = "Cancel";
+rewriteVariantsActions.appendChild(rewriteVariantsCancel);
+rewriteVariants.appendChild(rewriteVariantsLabel);
+rewriteVariants.appendChild(rewriteVariantsList);
+rewriteVariants.appendChild(rewriteVariantsActions);
+rewriteOutput.insertAdjacentElement("afterend", rewriteVariants);
+
 let debounceTimer = null;
 let inflight = false;
 let pending = false;
@@ -30,6 +131,7 @@ async function probeCapabilities() {
     if (c.llm_built && c.model_loaded) {
       label = c.personal_adapter_loaded ? "harper + llm + personal" : "harper + llm";
       rewriteBtn.disabled = false;
+      if (rewriteVariantsBtn) rewriteVariantsBtn.disabled = false;
       rewriteHint.textContent = "";
     } else if (c.llm_built && !c.model_loaded) {
       label = "harper + llm (no model)";
@@ -228,6 +330,100 @@ rewriteApply.addEventListener("click", () => {
 rewriteDismiss.addEventListener("click", () => {
   rewriteOutput.classList.add("hidden");
 });
+
+// ---- Multi-variant rewrite (3 alternatives, click to apply) -------------
+function hideVariants() {
+  rewriteVariants.classList.add("hidden");
+  rewriteVariantsList.innerHTML = "";
+  rewriteVariantsHint.textContent = "";
+}
+
+function applyVariant(variantText) {
+  // Mirror the single-rewrite "Apply" path: replace the selection (or the
+  // whole textarea when nothing is selected) with the chosen variant, and
+  // journal the (before, after) pair so the personal adapter learns from
+  // the user's pick.
+  const sel = selectedOrAll();
+  const before = editor.value;
+  const after =
+    editor.value.slice(0, sel.start) + variantText + editor.value.slice(sel.end);
+  editor.value = after;
+  hideVariants();
+  invoke("journal_log", {
+    kind: "rewrite_apply",
+    sourceText: before,
+    appliedText: after,
+    suggested: variantText,
+  })
+    .then(() => refreshPersonal())
+    .catch(() => {});
+  runCheck();
+}
+
+function renderVariants(variants) {
+  rewriteVariantsList.innerHTML = "";
+  variants.forEach((v, i) => {
+    const card = document.createElement("button");
+    card.className = "rewrite-variant-card";
+    card.type = "button";
+    const tag = document.createElement("span");
+    tag.className = "variant-tag";
+    // Variant 0 is greedy (deterministic), 1+ are sampled.
+    tag.textContent = i === 0 ? "greedy" : `alt ${i}`;
+    card.appendChild(tag);
+    card.appendChild(document.createTextNode(v));
+    card.addEventListener("click", () => applyVariant(v));
+    rewriteVariantsList.appendChild(card);
+  });
+}
+
+async function runRewriteVariants() {
+  const { text } = selectedOrAll();
+  if (!text.trim()) return;
+  // Hide the single-rewrite panel so the two UIs don't fight for the eye.
+  rewriteOutput.classList.add("hidden");
+  rewriteVariants.classList.remove("hidden");
+  rewriteVariantsBtn.disabled = true;
+  rewriteBtn.disabled = true;
+  rewriteVariantsList.innerHTML =
+    '<div class="rewrite-variants-loading">generating 3 variants — runs the model 3× so this is slower than a single rewrite</div>';
+  rewriteVariantsHint.textContent = "";
+  const t0 = performance.now();
+  try {
+    const variants = await invoke("rewrite_variants", {
+      text,
+      instruction: null,
+      n: 3,
+    });
+    const dt = (performance.now() - t0).toFixed(0);
+    if (!variants || variants.length === 0) {
+      rewriteVariantsList.innerHTML =
+        '<div class="rewrite-variants-loading">no variants returned</div>';
+      rewriteVariantsHint.textContent = `${dt} ms`;
+      return;
+    }
+    renderVariants(variants);
+    const per = (dt / variants.length).toFixed(0);
+    rewriteVariantsHint.textContent =
+      variants.length === 1
+        ? `${dt} ms · 1 variant`
+        : `${dt} ms · ${variants.length} variants (~${per} ms each)`;
+  } catch (err) {
+    rewriteVariantsList.innerHTML = `<div class="rewrite-variants-loading">error: ${escapeHtml(
+      String(err)
+    )}</div>`;
+  } finally {
+    rewriteVariantsBtn.disabled = false;
+    rewriteBtn.disabled = false;
+  }
+}
+
+if (rewriteVariantsBtn) {
+  rewriteVariantsBtn.addEventListener("click", runRewriteVariants);
+}
+if (rewriteVariantsCancel) {
+  rewriteVariantsCancel.addEventListener("click", hideVariants);
+}
 
 editor.addEventListener("input", debounce(runCheck, 250));
 

@@ -191,4 +191,135 @@ impl RewriteEngine {
 
         Ok(out.replace(STOP_MARKER, "").trim().to_string())
     }
+
+    /// Generate up to `n` rewrite variants using independent samplers and
+    /// fresh contexts per variant. Variant 0 is always the deterministic
+    /// greedy baseline (same as `rewrite`); subsequent variants use
+    /// temp=0.7 / top_p=0.9 with distinct RNG seeds so the user gets real
+    /// alternatives, not minor reshuffles. Identical outputs (after `trim()`)
+    /// are deduped before returning — sometimes greedy + low-temp converge.
+    ///
+    /// Wall-clock is roughly N × single-rewrite latency since each variant
+    /// builds its own context and runs its own decode loop. We deliberately
+    /// don't reuse a single context across variants: KV-cache state would
+    /// leak across samples and undermine the variance we're trying to
+    /// produce.
+    pub fn rewrite_variants(
+        &self,
+        text: &str,
+        instruction: Option<&str>,
+        n: usize,
+    ) -> Result<Vec<String>> {
+        if n == 0 {
+            return Ok(Vec::new());
+        }
+        let n = n.min(5);
+        let mut outs: Vec<String> = Vec::with_capacity(n);
+        for i in 0..n {
+            let sampler = match i {
+                0 => LlamaSampler::greedy(),
+                1 => LlamaSampler::chain_simple([
+                    LlamaSampler::temp(0.7),
+                    LlamaSampler::top_p(0.9, 1),
+                    LlamaSampler::dist(1337),
+                ]),
+                2 => LlamaSampler::chain_simple([
+                    LlamaSampler::temp(0.7),
+                    LlamaSampler::top_p(0.9, 1),
+                    LlamaSampler::dist(2718),
+                ]),
+                // Fallback for n=4..=5; pick distinct seeds so variants stay distinct.
+                k => LlamaSampler::chain_simple([
+                    LlamaSampler::temp(0.7),
+                    LlamaSampler::top_p(0.9, 1),
+                    LlamaSampler::dist(4096 + k as u32),
+                ]),
+            };
+            let out = self.rewrite_one(text, instruction, sampler)?;
+            let trimmed = out.trim().to_string();
+            if trimmed.is_empty() {
+                continue;
+            }
+            if !outs.iter().any(|prev| prev == &trimmed) {
+                outs.push(trimmed);
+            }
+        }
+        Ok(outs)
+    }
+
+    /// Single-shot rewrite with a caller-supplied sampler. Shared between
+    /// `rewrite_streaming` (greedy chain) and `rewrite_variants` (per-variant
+    /// sampler) — but kept private and parameter-driven so the public APIs
+    /// don't accidentally share sampler state. Each call builds a fresh
+    /// context, so concurrent / sequential calls don't share KV cache.
+    fn rewrite_one(
+        &self,
+        text: &str,
+        instruction: Option<&str>,
+        mut sampler: LlamaSampler,
+    ) -> Result<String> {
+        let src = format!("{} {}", instruction.unwrap_or(DEFAULT_INSTRUCTION), text);
+        let prompt = PROMPT_TEMPLATE.replace("{src}", &src);
+
+        let ctx_params = LlamaContextParams::default().with_n_ctx(NonZeroU32::new(self.ctx_size));
+        let mut ctx = self
+            .model
+            .new_context(&self.backend, ctx_params)
+            .context("creating llama context")?;
+
+        if let Some(adapter_mu) = &self.adapter {
+            let mut cell = adapter_mu
+                .lock()
+                .map_err(|_| anyhow::anyhow!("adapter mutex poisoned"))?;
+            ctx.lora_adapter_set(&mut cell.0, self.adapter_scale)
+                .map_err(|e| anyhow::anyhow!("lora_adapter_set: {e}"))?;
+        }
+
+        let tokens = self
+            .model
+            .str_to_token(&prompt, AddBos::Always)
+            .context("tokenizing prompt")?;
+        let prompt_len = tokens.len() as i32;
+        let n_len = prompt_len + self.max_new_tokens;
+        if n_len > ctx.n_ctx() as i32 {
+            bail!(
+                "prompt + max_new_tokens ({n_len}) exceeds context size ({})",
+                ctx.n_ctx()
+            );
+        }
+
+        let mut batch = LlamaBatch::new(512.max(prompt_len as usize), 1);
+        let last_idx = prompt_len - 1;
+        for (i, tok) in tokens.into_iter().enumerate() {
+            batch.add(tok, i as i32, &[0], i as i32 == last_idx)?;
+        }
+        ctx.decode(&mut batch).context("initial decode")?;
+
+        let mut decoder = encoding_rs::UTF_8.new_decoder();
+        let mut out = String::new();
+        let mut n_cur = batch.n_tokens();
+
+        while n_cur <= n_len {
+            let token = sampler.sample(&ctx, batch.n_tokens() - 1);
+            sampler.accept(token);
+            if self.model.is_eog_token(token) {
+                break;
+            }
+            let piece = self
+                .model
+                .token_to_piece(token, &mut decoder, true, None)
+                .context("token_to_piece")?;
+            if piece.contains("<end_of_turn>") {
+                break;
+            }
+            out.push_str(&piece);
+
+            batch.clear();
+            batch.add(token, n_cur, &[0], true)?;
+            ctx.decode(&mut batch).context("decode step")?;
+            n_cur += 1;
+        }
+
+        Ok(out.replace("<end_of_turn>", "").trim().to_string())
+    }
 }
