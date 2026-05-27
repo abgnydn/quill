@@ -5,11 +5,25 @@
 //! install never sees a missing-file error. Writes are atomic (tempfile +
 //! rename) so a crashing Quill can't leave a half-written config.
 
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use serde::{Deserialize, Serialize};
+
+/// Per-app override for the engagement policy. Lets the user force-enable
+/// Quill in an app that the hardcoded policy would skip (e.g. VS Code's
+/// markdown panes) or force-disable it in an app that the policy would
+/// engage (e.g. a specific browser the user wants quiet).
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AppOverride {
+    /// Engage even when [`engagement_policy::is_engageable`] returns false.
+    ForceAllow,
+    /// Skip even when the policy would normally engage.
+    ForceDeny,
+}
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
@@ -25,6 +39,17 @@ pub struct Config {
     /// True after a successful auto-train; cleared once the user has
     /// relaunched (we use the absence of any prior session as the cue).
     pub pending_relaunch: bool,
+    /// Words Quill should never lint (matched case-insensitive against the
+    /// substring under a lint span). User's personal dictionary — names,
+    /// jargon, slang, codenames. Lives in the config so it survives a
+    /// reinstall.
+    pub ignored_words: Vec<String>,
+    /// When true the focus tracker skips ALL apps. The lint pipeline still
+    /// runs (for the main-window panel) but the overlay stays silent. Used
+    /// for screen-shares, demos, calls.
+    pub paused: bool,
+    /// Per-app override map keyed by bundle ID. Overrides [`engagement_policy`].
+    pub app_overrides: HashMap<String, AppOverride>,
 }
 
 impl Default for Config {
@@ -35,7 +60,23 @@ impl Default for Config {
             last_train_event_count: 0,
             last_train_at: None,
             pending_relaunch: false,
+            ignored_words: Vec::new(),
+            paused: false,
+            app_overrides: HashMap::new(),
         }
+    }
+}
+
+impl Config {
+    /// Case-insensitive lookup against [`ignored_words`].
+    pub fn is_ignored(&self, word: &str) -> bool {
+        let lw = word.to_lowercase();
+        self.ignored_words.iter().any(|w| w.to_lowercase() == lw)
+    }
+
+    /// Resolve the per-app override for a bundle ID, if any.
+    pub fn app_override(&self, bundle_id: &str) -> Option<AppOverride> {
+        self.app_overrides.get(bundle_id).copied()
     }
 }
 
@@ -112,6 +153,31 @@ mod tests {
         assert!(!c.auto_retrain_enabled);
         assert_eq!(c.auto_retrain_threshold, 25);
         assert_eq!(c.last_train_event_count, 0);
+        assert!(c.ignored_words.is_empty());
+        assert!(!c.paused);
+        assert!(c.app_overrides.is_empty());
+    }
+
+    #[test]
+    fn is_ignored_is_case_insensitive() {
+        let mut c = Config::default();
+        c.ignored_words.push("BitNet".into());
+        c.ignored_words.push("abgunaydin".into());
+        assert!(c.is_ignored("bitnet"));
+        assert!(c.is_ignored("BITNET"));
+        assert!(c.is_ignored("Abgunaydin"));
+        assert!(!c.is_ignored("bitnett"));
+        assert!(!c.is_ignored("ab"));
+    }
+
+    #[test]
+    fn app_override_lookup() {
+        let mut c = Config::default();
+        c.app_overrides.insert("com.example.Foo".into(), AppOverride::ForceAllow);
+        c.app_overrides.insert("com.example.Bar".into(), AppOverride::ForceDeny);
+        assert_eq!(c.app_override("com.example.Foo"), Some(AppOverride::ForceAllow));
+        assert_eq!(c.app_override("com.example.Bar"), Some(AppOverride::ForceDeny));
+        assert_eq!(c.app_override("com.example.Baz"), None);
     }
 
     #[test]

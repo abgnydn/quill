@@ -168,8 +168,7 @@ mod tests {
             auto_retrain_enabled: true,
             auto_retrain_threshold: 25,
             last_train_event_count: 100,
-            last_train_at: None,
-            pending_relaunch: false,
+            ..crate::config::Config::default()
         };
         let applied_total: u64 = 110; // delta = 10, threshold = 25
         let new_events = applied_total.saturating_sub(cfg.last_train_event_count);
@@ -182,8 +181,7 @@ mod tests {
             auto_retrain_enabled: true,
             auto_retrain_threshold: 25,
             last_train_event_count: 100,
-            last_train_at: None,
-            pending_relaunch: false,
+            ..crate::config::Config::default()
         };
         let applied_total: u64 = 125; // delta = 25
         let new_events = applied_total.saturating_sub(cfg.last_train_event_count);
@@ -196,8 +194,7 @@ mod tests {
             auto_retrain_enabled: false,
             auto_retrain_threshold: 25,
             last_train_event_count: 100,
-            last_train_at: None,
-            pending_relaunch: false,
+            ..crate::config::Config::default()
         };
         // No matter how many new events, we shouldn't trigger because
         // `auto_retrain_enabled == false`. The function under test exits

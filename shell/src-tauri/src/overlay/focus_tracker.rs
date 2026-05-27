@@ -78,10 +78,10 @@ pub struct FocusEvent {
 
 /// Spawn the polling thread. Returns immediately; logs Accessibility-permission
 /// status to stderr.
-pub fn spawn(app: AppHandle) {
+pub fn spawn(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
     thread::Builder::new()
         .name("quill-focus-tracker".into())
-        .spawn(move || run(app))
+        .spawn(move || run(app, config))
         .expect("spawn focus-tracker thread");
 }
 
@@ -94,7 +94,7 @@ fn fresh_linter() -> harper_core::linting::LintGroup {
     LintGroup::new_curated(FstDictionary::curated(), Dialect::American)
 }
 
-fn run(app: AppHandle) {
+fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
     // First check WITH prompt: triggers the system "grant Accessibility?"
     // dialog the first time. AXIsProcessTrustedWithOptions does a fresh read
     // each call (unlike AXIsProcessTrusted, which caches per-process).
@@ -120,11 +120,33 @@ fn run(app: AppHandle) {
     let mut last_skip: Option<SkipContext> = None;
     let mut tick = 0u32;
 
+    let mut last_paused_state: Option<bool> = None;
     loop {
         thread::sleep(Duration::from_millis(150));
         tick = tick.wrapping_add(1);
 
-        let snapshot = focused_snapshot(system_wide);
+        // Pause short-circuit — when the user toggled Quill paused (via tray
+        // or settings), we skip every AXUI read.
+        let cfg = config.snapshot();
+        if cfg.paused {
+            if last_paused_state != Some(true) {
+                eprintln!("[quill] paused — overlay silent until resumed");
+                last_paused_state = Some(true);
+                last_bounds = None;
+                last_text_hash = 0;
+                last_skip = None;
+                // Tell the overlay to hide.
+                let _ = app.emit_to(OVERLAY_LABEL, "focus-update", &FocusEvent {
+                    bounds: None, text: None, lints: vec![],
+                });
+            }
+            continue;
+        } else if last_paused_state == Some(true) {
+            eprintln!("[quill] resumed");
+            last_paused_state = Some(false);
+        }
+
+        let snapshot = focused_snapshot(system_wide, &cfg);
 
         // Log on every NEW skip context — gives users visible evidence that
         // the engagement filter is working without spamming on every poll.
@@ -165,9 +187,12 @@ fn run(app: AppHandle) {
         };
 
         // Lint the text if we got any. Harper takes ~5-30ms per check on
-        // typical sentence-length input.
+        // typical sentence-length input. Honor the user's personal
+        // dictionary so e.g. "BitNet" or "abgunaydin" doesn't get flagged.
         let raw_lints: Vec<crate::wire::WireLint> = match &text {
-            Some(t) if !t.is_empty() => crate::wire::check_text_with(&mut linter, t),
+            Some(t) if !t.is_empty() => {
+                crate::wire::check_text_filtered(&mut linter, t, &cfg.ignored_words)
+            }
             _ => Vec::new(),
         };
 
@@ -251,7 +276,10 @@ enum SnapshotResult {
     Empty,
 }
 
-fn focused_snapshot(system_wide: AXUIElementRef) -> SnapshotResult {
+fn focused_snapshot(
+    system_wide: AXUIElementRef,
+    config_snap: &crate::config::Config,
+) -> SnapshotResult {
     let Some(focused_app) = copy_attr(system_wide, kAXFocusedApplicationAttribute) else {
         return SnapshotResult::Empty;
     };
@@ -263,17 +291,26 @@ fn focused_snapshot(system_wide: AXUIElementRef) -> SnapshotResult {
     };
     let elem_ref = focused_elem as AXUIElementRef;
 
-    // Gate: only engage on text-input roles in apps Grammarly would engage in.
-    // Terminals, URL bars, password fields, code editors, launchers → drop.
     let role = copy_string_attr(elem_ref, kAXRoleAttribute);
     let subrole = copy_string_attr(elem_ref, kAXSubroleAttribute);
     let role_description = copy_string_attr(elem_ref, kAXRoleDescriptionAttribute);
-    if !crate::overlay::engagement_policy::is_engageable(
-        role.as_deref(),
-        subrole.as_deref(),
-        role_description.as_deref(),
-        bundle_id.as_deref(),
-    ) {
+
+    // Per-app override (set via Settings UI). ForceDeny always skips;
+    // ForceAllow bypasses the engagement policy entirely.
+    let user_override = bundle_id
+        .as_deref()
+        .and_then(|bid| config_snap.app_override(bid));
+    let engage = match user_override {
+        Some(crate::config::AppOverride::ForceDeny) => false,
+        Some(crate::config::AppOverride::ForceAllow) => true,
+        None => crate::overlay::engagement_policy::is_engageable(
+            role.as_deref(),
+            subrole.as_deref(),
+            role_description.as_deref(),
+            bundle_id.as_deref(),
+        ),
+    };
+    if !engage {
         unsafe { CFRelease(focused_elem) };
         return SnapshotResult::Skip(SkipContext { bundle_id, role, subrole, role_description });
     }

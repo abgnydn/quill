@@ -73,8 +73,31 @@ fn wire_lints_from<I: IntoIterator<Item = harper_core::linting::Lint>>(lints: I)
 /// IPC wire format. Single source of truth — main window's `check` command
 /// and the overlay focus tracker both go through here.
 pub fn check_text_with(linter: &mut LintGroup, text: &str) -> Vec<WireLint> {
+    check_text_filtered(linter, text, &[])
+}
+
+/// Same as [`check_text_with`] but drops any lint whose underlying text span
+/// (case-insensitive) matches a word in `ignored`. Used to honor the user's
+/// personal dictionary — names, jargon, codenames that Harper would
+/// otherwise flag as spelling errors.
+pub fn check_text_filtered(
+    linter: &mut LintGroup,
+    text: &str,
+    ignored: &[String],
+) -> Vec<WireLint> {
     let document = Document::new_curated(text, &PlainEnglish);
-    wire_lints_from(linter.lint(&document))
+    let mut out = wire_lints_from(linter.lint(&document));
+    if !ignored.is_empty() {
+        let ignored_lower: Vec<String> = ignored.iter().map(|w| w.to_lowercase()).collect();
+        out.retain(|lint| {
+            let span = match text.get(lint.start..lint.end) {
+                Some(s) => s.to_lowercase(),
+                None => return true,
+            };
+            !ignored_lower.iter().any(|w| *w == span)
+        });
+    }
+    out
 }
 
 #[cfg(test)]
@@ -98,6 +121,35 @@ mod tests {
         ] {
             assert!(s.contains(&format!("\"{f}\":")), "missing {f} in {s}");
         }
+    }
+
+    #[test]
+    fn ignored_words_filter_drops_matching_spans() {
+        use harper_core::Dialect;
+        use harper_core::spell::FstDictionary;
+        let mut linter = LintGroup::new_curated(FstDictionary::curated(), Dialect::American);
+        let text = "BitNet is fast";
+        let unfiltered = check_text_with(&mut linter, text);
+        let bitnet_flagged = unfiltered.iter().any(|l| {
+            text.get(l.start..l.end).map(|s| s.eq_ignore_ascii_case("bitnet")).unwrap_or(false)
+        });
+        assert!(bitnet_flagged, "expected Harper to flag 'BitNet' as a spelling error");
+        let filtered = check_text_filtered(&mut linter, text, &["bitnet".to_string()]);
+        let still_flagged = filtered.iter().any(|l| {
+            text.get(l.start..l.end).map(|s| s.eq_ignore_ascii_case("bitnet")).unwrap_or(false)
+        });
+        assert!(!still_flagged, "expected 'BitNet' lint to be filtered out");
+    }
+
+    #[test]
+    fn empty_ignored_list_changes_nothing() {
+        use harper_core::Dialect;
+        use harper_core::spell::FstDictionary;
+        let mut linter = LintGroup::new_curated(FstDictionary::curated(), Dialect::American);
+        let text = "I has a apple.";
+        let a = check_text_with(&mut linter, text);
+        let b = check_text_filtered(&mut linter, text, &[]);
+        assert_eq!(a.len(), b.len());
     }
 
     #[test]

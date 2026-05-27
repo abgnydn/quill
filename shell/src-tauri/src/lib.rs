@@ -258,7 +258,7 @@ pub fn run() {
                 let hot = std::sync::Arc::new(overlay::mouse_arbiter::HotRegions::default());
                 app.manage(hot.clone());
                 overlay::mouse_arbiter::spawn(app.handle().clone(), hot);
-                overlay::focus_tracker::spawn(app.handle().clone());
+                overlay::focus_tracker::spawn(app.handle().clone(), config.clone());
             }
 
             Ok(())
@@ -281,6 +281,13 @@ pub fn run() {
             commands::config_get,
             commands::config_set_auto_retrain,
             commands::config_clear_pending_relaunch,
+            commands::dictionary_list,
+            commands::dictionary_add,
+            commands::dictionary_remove,
+            commands::pause_set,
+            commands::pause_toggle,
+            commands::app_override_set,
+            commands::app_override_remove,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -8,12 +8,17 @@ use tauri::State;
 
 use crate::journal::{self, Journal, JournalStats};
 use crate::state::{CheckerState, RewriteState};
-use crate::wire::{check_text_with, Capabilities, WireLint};
+use crate::wire::{Capabilities, WireLint};
 
 #[tauri::command]
-pub fn check(text: &str, state: State<'_, CheckerState>) -> Vec<WireLint> {
+pub fn check(
+    text: &str,
+    state: State<'_, CheckerState>,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Vec<WireLint> {
     let mut linter = state.linter.lock().expect("checker mutex poisoned");
-    check_text_with(&mut linter, text)
+    let snap = config.snapshot();
+    crate::wire::check_text_filtered(&mut linter, text, &snap.ignored_words)
 }
 
 #[tauri::command]
@@ -262,6 +267,113 @@ pub fn config_clear_pending_relaunch(
 ) -> Result<crate::config::Config, String> {
     config
         .update(|c| c.pending_relaunch = false)
+        .map_err(|e| e.to_string())
+}
+
+// ─────────── Personal dictionary ───────────
+
+#[tauri::command]
+pub fn dictionary_list(
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Vec<String> {
+    let mut words = config.snapshot().ignored_words;
+    words.sort();
+    words
+}
+
+#[tauri::command]
+pub fn dictionary_add(
+    word: String,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<Vec<String>, String> {
+    let trimmed = word.trim();
+    if trimmed.is_empty() {
+        return Err("word is empty".into());
+    }
+    let w = trimmed.to_string();
+    config
+        .update(|c| {
+            let lw = w.to_lowercase();
+            if !c.ignored_words.iter().any(|x| x.to_lowercase() == lw) {
+                c.ignored_words.push(w.clone());
+            }
+        })
+        .map_err(|e| e.to_string())
+        .map(|c| {
+            let mut v = c.ignored_words;
+            v.sort();
+            v
+        })
+}
+
+#[tauri::command]
+pub fn dictionary_remove(
+    word: String,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<Vec<String>, String> {
+    let lw = word.to_lowercase();
+    config
+        .update(|c| c.ignored_words.retain(|w| w.to_lowercase() != lw))
+        .map_err(|e| e.to_string())
+        .map(|c| {
+            let mut v = c.ignored_words;
+            v.sort();
+            v
+        })
+}
+
+// ─────────── Pause toggle ───────────
+
+#[tauri::command]
+pub fn pause_set(
+    paused: bool,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<bool, String> {
+    config
+        .update(|c| c.paused = paused)
+        .map_err(|e| e.to_string())
+        .map(|c| c.paused)
+}
+
+#[tauri::command]
+pub fn pause_toggle(
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<bool, String> {
+    config
+        .update(|c| c.paused = !c.paused)
+        .map_err(|e| e.to_string())
+        .map(|c| c.paused)
+}
+
+// ─────────── Per-app overrides ───────────
+
+#[tauri::command]
+pub fn app_override_set(
+    bundle_id: String,
+    kind: String,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<crate::config::Config, String> {
+    let override_kind = match kind.as_str() {
+        "force_allow" => crate::config::AppOverride::ForceAllow,
+        "force_deny" => crate::config::AppOverride::ForceDeny,
+        other => return Err(format!("unknown override kind: {other}")),
+    };
+    config
+        .update(|c| {
+            c.app_overrides.insert(bundle_id, override_kind);
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn app_override_remove(
+    bundle_id: String,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<crate::config::Config, String> {
+    config
+        .update(|c| {
+            c.app_overrides.remove(&bundle_id);
+        })
         .map_err(|e| e.to_string())
 }
 
