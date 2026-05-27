@@ -8,7 +8,7 @@
   </head>
   <body>
     <header>
-      <h1>quill</h1>
+      <h1>Nib</h1>
       <span class="meta" id="status">ready</span>
       <span class="caps" id="caps"></span>
     </header>
@@ -95,7 +95,36 @@
       </div>
       <div class="personal-note">
         Your edits stay on this device. Used to train a personal LoRA adapter
-        — never sent anywhere. <a href="https://github.com/abgnydn/quill" target="_blank">how this works</a>
+        — never sent anywhere.
+        <a href="#" id="train-explain-toggle">how training works ▾</a>
+      </div>
+      <div id="train-explain" class="train-explain" hidden>
+        <h4>How Nib learns from you</h4>
+        <ol>
+          <li><strong>Every accepted edit gets logged</strong> to
+            <code>~/Library/Application Support/Quill/journal.jsonl</code>
+            — the source text + your applied fix, nothing else. No analytics,
+            no network call.</li>
+          <li><strong>After N edits</strong> (default 25, configurable above),
+            Nib bundles the journal entries into ChatML pairs and hands them
+            to <code>llama-finetune-lora</code> — the local LoRA trainer
+            shipped inside the .app.</li>
+          <li><strong>Training runs on Apple Metal</strong>, on your Mac, in
+            about 5 minutes for 25-50 edits. Rank-16 LoRA on the attention
+            layers (attn_q/k/v/o) of LFM2.5. ~50 MB adapter file.</li>
+          <li><strong>The new adapter lands at</strong>
+            <code>~/Library/.../Quill/personal-adapter.gguf</code> and loads
+            on the next Nib launch. From then on, every rewrite goes through
+            base model + your personal LoRA on top.</li>
+          <li><strong>You can train manually</strong> via the Train button
+            above, or enable auto-retrain to fire every N edits without
+            asking. Reset wipes the journal + clears the adapter.</li>
+        </ol>
+        <p class="train-explain-note">
+          Compare to Grammarly: same dataset (your edits), but the training
+          happens on your laptop instead of their servers, the adapter is
+          yours to keep, and your prose never leaves your Mac.
+        </p>
       </div>
     </section>
     <section id="settings">

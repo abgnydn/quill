@@ -206,10 +206,24 @@ pub fn run() {
                 let menu = build_tray_menu(app.handle(), initial_paused)?;
 
                 let config_for_tray = config.clone();
+                // Load the dedicated monochrome tray icon (a pen-nib
+                // silhouette designed for macOS template-mode tinting).
+                // The default window icon is a colored squircle — it
+                // renders as a solid black blob in template mode.
+                let tray_icon = {
+                    use tauri::path::BaseDirectory;
+                    use tauri::Manager;
+                    let p = app.path().resolve(
+                        "icons/tray-icon@2x.png",
+                        BaseDirectory::Resource,
+                    ).ok();
+                    p.and_then(|p| tauri::image::Image::from_path(p).ok())
+                        .unwrap_or_else(|| app.default_window_icon().expect("icon").clone())
+                };
                 let _tray = TrayIconBuilder::with_id("main")
                     .tooltip("Nib — local-first grammar")
                     .menu(&menu)
-                    .icon(app.default_window_icon().expect("icon").clone())
+                    .icon(tray_icon)
                     .icon_as_template(true)
                     .on_menu_event(move |app, event| match event.id.as_ref() {
                         "pause-toggle" => {

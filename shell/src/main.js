@@ -917,6 +917,19 @@ function escHtml(s) {
     .replaceAll('"', "&quot;");
 }
 
+// "How training works" expandable explanation in the personalization panel.
+(() => {
+  const toggle = document.getElementById("train-explain-toggle");
+  const body = document.getElementById("train-explain");
+  if (!toggle || !body) return;
+  toggle.addEventListener("click", (e) => {
+    e.preventDefault();
+    const open = !body.hidden;
+    body.hidden = open;
+    toggle.textContent = open ? "how training works ▾" : "how training works ▴";
+  });
+})();
+
 probeCapabilities();
 runCheck();
 refreshPersonal();
