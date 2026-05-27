@@ -103,6 +103,60 @@ pub fn check_text_filtered(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::state::build_linter;
+
+    /// `build_linter` should match the curated set's behavior on a sentence
+    /// that exercises a default rule (article agreement), so the extra
+    /// enables in `state::EXTRA_RULES` don't accidentally regress defaults.
+    #[test]
+    fn build_linter_still_flags_curated_defaults() {
+        let mut lg = build_linter();
+        let lints = check_text_with(&mut lg, "This is an test.");
+        assert!(!lints.is_empty(), "curated default a/an rule should still fire");
+    }
+
+    fn assert_kind_fires(text: &str, expected_rule: &str) {
+        let mut lg = build_linter();
+        let lints = check_text_with(&mut lg, text);
+        assert!(
+            !lints.is_empty(),
+            "expected `{expected_rule}` to fire on: {text:?}; got no lints"
+        );
+    }
+
+    /// `BoringWords` is off by default in `new_curated`; `build_linter`
+    /// must enable it. "very" is in its trigger set.
+    #[test]
+    fn boring_words_rule_fires() {
+        assert_kind_fires("The cake was very good.", "BoringWords");
+    }
+
+    /// `PossessiveNoun` is off by default; `build_linter` must enable it.
+    /// Missing-apostrophe possessive — proper noun + plural noun + noun.
+    #[test]
+    fn possessive_noun_rule_fires() {
+        assert_kind_fires("Sarahs car is parked outside the building.", "PossessiveNoun");
+    }
+
+    /// `SpelledNumbers` is off by default; `build_linter` must enable it.
+    /// Recommends spelling out integers < 10.
+    #[test]
+    fn spelled_numbers_rule_fires() {
+        assert_kind_fires("I have 3 cats at home.", "SpelledNumbers");
+    }
+
+    /// Sanity-check that no new test-only rule is silently disabled by the
+    /// helper — `EXTRA_RULES` should match what we enable.
+    #[test]
+    fn extra_rules_all_enabled_in_built_linter() {
+        let lg = build_linter();
+        for rule in crate::state::EXTRA_RULES {
+            assert!(
+                lg.config.is_rule_enabled(rule),
+                "EXTRA_RULES lists `{rule}` but build_linter didn't enable it"
+            );
+        }
+    }
 
     #[test]
     fn capabilities_serializes_personal_field() {

@@ -352,12 +352,12 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use harper_core::Dialect;
     use harper_core::linting::LintGroup;
-    use harper_core::spell::FstDictionary;
 
     fn fresh_linter() -> LintGroup {
-        LintGroup::new_curated(FstDictionary::curated(), Dialect::American)
+        // Mirror production wiring (curated + EXTRA_RULES) so tests catch
+        // regressions in either the defaults or the extras.
+        state::build_linter()
     }
 
     #[test]

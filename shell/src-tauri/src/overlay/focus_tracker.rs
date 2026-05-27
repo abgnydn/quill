@@ -86,12 +86,11 @@ pub fn spawn(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>)
 }
 
 /// Build a private LintGroup for the tracker thread. Harper's `concurrent`
-/// feature is enabled in Cargo.toml so the dictionary is `Send`.
+/// feature is enabled in Cargo.toml so the dictionary is `Send`. Mirrors
+/// `state::build_linter` — both call sites must enable the same extra rules
+/// so the main-window panel and the overlay surface identical lints.
 fn fresh_linter() -> harper_core::linting::LintGroup {
-    use harper_core::Dialect;
-    use harper_core::linting::LintGroup;
-    use harper_core::spell::FstDictionary;
-    LintGroup::new_curated(FstDictionary::curated(), Dialect::American)
+    crate::state::build_linter()
 }
 
 fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {

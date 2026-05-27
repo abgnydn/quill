@@ -9,15 +9,41 @@ use harper_core::spell::FstDictionary;
 #[cfg(feature = "llm")]
 use crate::inference;
 
+/// Style / clarity rules that Harper 2.0 ships disabled by default but that we
+/// want on in Quill. Single source of truth — both `CheckerState::new` and the
+/// overlay's `fresh_linter()` route through `build_linter` so they stay in sync.
+///
+/// Selection rationale (from auditing `harper-core-2.0.0/src/linting/lint_group/mod.rs`,
+/// the off-by-default set is small — only 7 rules):
+/// - `BoringWords`     — flags "very / interesting / several / most / many",
+///                       low-noise nudge toward stronger word choice.
+/// - `PossessiveNoun`  — catches missing-apostrophe possessives ("the dogs bone").
+/// - `SpelledNumbers`  — suggests spelling out integers < 10
+///                       (`I have 3 cats.` -> `I have three cats.`).
+///
+/// Deliberately left OFF (would be noisy or wrong for casual writing):
+/// - `NoOxfordComma` — conflicts with the curated `OxfordComma` rule.
+/// - `AnotherThinkComing` / `ViciousCycle*` — pedantic / niche idiom corrections.
+pub const EXTRA_RULES: &[&str] = &["BoringWords", "PossessiveNoun", "SpelledNumbers"];
+
+/// Build a fresh `LintGroup` with Harper's curated defaults plus the small
+/// set of style / clarity rules listed in [`EXTRA_RULES`].
+pub fn build_linter() -> LintGroup {
+    let mut lg = LintGroup::new_curated(FstDictionary::curated(), Dialect::American);
+    for rule in EXTRA_RULES {
+        lg.config.set_rule_enabled(*rule, true);
+    }
+    lg
+}
+
 pub struct CheckerState {
     pub linter: Mutex<LintGroup>,
 }
 
 impl CheckerState {
     pub fn new() -> Self {
-        let dict = FstDictionary::curated();
         Self {
-            linter: Mutex::new(LintGroup::new_curated(dict, Dialect::American)),
+            linter: Mutex::new(build_linter()),
         }
     }
 }
