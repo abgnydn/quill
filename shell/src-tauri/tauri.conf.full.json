@@ -37,11 +37,12 @@
     ],
     "resources": [
       "resources/lfm2.5-350m-q4_k_m.gguf",
+      "resources/lfm2.5-1.2b-instruct-q4_k_m.gguf",
       "resources/qvac/*"
     ],
     "category": "Productivity",
-    "shortDescription": "Nib — local-first grammar assistant",
-    "longDescription": "Nib is a local-first grammar and writing assistant for macOS. Combines a fast Harper rule engine with the LiquidAI LFM2.5-350M LLM, both running entirely on-device. Zero network calls; your prose never leaves your Mac.",
+    "shortDescription": "Nib — local-first grammar assistant (Full)",
+    "longDescription": "Nib Full edition. Ships both LFM2.5-350M (fast/light, default) and LFM2.5-1.2B-Instruct (faithful rewrites) pre-bundled. Pick your model in Settings without downloading anything.",
     "macOS": {
       "minimumSystemVersion": "13.0",
       "frameworks": [],

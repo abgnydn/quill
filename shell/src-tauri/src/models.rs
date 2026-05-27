@@ -66,23 +66,50 @@ pub fn lookup(id: &str) -> &'static ModelInfo {
     REGISTRY.iter().find(|m| m.id == id).unwrap_or(&REGISTRY[0])
 }
 
-/// Resolve the on-disk path for a given model. Bundled models go through
-/// the Tauri resource resolver; downloaded ones live in
-/// `~/Library/Application Support/Nib/models/`.
-pub fn resolve_path(app: &tauri::App, id: &str) -> Option<PathBuf> {
+/// Resolve the on-disk path for a given model. Checks BOTH the bundle
+/// resources dir AND the downloaded-models dir — that way the Full
+/// installer (which ships LFM2.5-1.2B inside the .app) and the regular
+/// installer (which expects users to download it) both work via the
+/// same code path. Bundle wins when present.
+///
+/// Generic over `Manager` so both `&tauri::App` (setup-time) and
+/// `&tauri::AppHandle` (command-time) work without duplication.
+pub fn resolve_path<R: tauri::Runtime, M: tauri::Manager<R>>(
+    app: &M,
+    id: &str,
+) -> Option<PathBuf> {
     let info = lookup(id);
-    if info.bundled {
-        use tauri::Manager;
-        app.path()
-            .resolve(
-                format!("resources/{}", info.filename),
-                tauri::path::BaseDirectory::Resource,
-            )
-            .ok()
-    } else {
-        let p = downloaded_models_dir().ok()?.join(info.filename);
-        if p.exists() { Some(p) } else { None }
+    if let Ok(p) = app.path().resolve(
+        format!("resources/{}", info.filename),
+        tauri::path::BaseDirectory::Resource,
+    ) {
+        if p.exists() {
+            return Some(p);
+        }
     }
+    let p = downloaded_models_dir().ok()?.join(info.filename);
+    if p.exists() { Some(p) } else { None }
+}
+
+/// Runtime check: is the model on disk anywhere we can load from?
+pub fn is_installed<R: tauri::Runtime, M: tauri::Manager<R>>(
+    app: &M,
+    id: &str,
+) -> bool {
+    resolve_path(app, id).is_some()
+}
+
+/// Extended ModelInfo with runtime "installed" + "loaded" flags. Used
+/// by the model_list Tauri command so the UI can render "bundled",
+/// "downloaded", "needs download" pills correctly per actual disk state.
+#[derive(Serialize, Clone, Debug)]
+pub struct ModelInfoExt {
+    #[serde(flatten)]
+    pub info: ModelInfo,
+    /// File is present on disk (bundled in .app OR downloaded).
+    pub installed: bool,
+    /// True if this is the model currently selected in config.
+    pub selected: bool,
 }
 
 /// `~/Library/Application Support/Nib/models/`, created if missing.

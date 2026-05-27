@@ -808,31 +808,32 @@ async function refreshSettings() {
 async function refreshModelList() {
   try {
     const models = await invoke("model_list");
-    const selectedId = await invoke("model_get_selected");
     const dl = await invoke("model_download_status");
-    renderModelList(models, selectedId, dl);
+    renderModelList(models, dl);
   } catch (e) {
     console.error("model list refresh failed:", e);
   }
 }
 
-function renderModelList(models, selectedId, dlStatus) {
+function renderModelList(models, dlStatus) {
   const list = document.getElementById("model-list");
   if (!list) return;
   list.innerHTML = "";
   for (const m of models) {
-    const downloaded = m.bundled || (
-      dlStatus.model_id === m.id && dlStatus.state === "done"
-    );
+    // `m` is ModelInfoExt: info fields flattened in + installed/selected.
+    const selectedId = models.find(x => x.selected)?.id;
+    const installed = m.installed;
     const row = document.createElement("label");
-    row.className = "model-row" + (m.id === selectedId ? " selected" : "");
+    row.className = "model-row" + (m.selected ? " selected" : "");
 
     const radio = document.createElement("input");
     radio.type = "radio";
     radio.name = "model";
     radio.value = m.id;
-    radio.checked = (m.id === selectedId);
+    radio.checked = m.selected;
+    radio.disabled = !installed;
     radio.addEventListener("change", async () => {
+      if (!installed) return;
       try {
         await invoke("model_set_selected", { id: m.id });
         showSettingsToast(`Selected ${m.display_name}. Quit and relaunch Nib to load it.`);
@@ -848,13 +849,16 @@ function renderModelList(models, selectedId, dlStatus) {
 
     const name = document.createElement("div");
     name.className = "model-name";
+    // Pill: prefer "bundled" label when canonically bundled, else
+    // "downloaded" if present on disk, else nothing (needs download).
+    let statusPill = '';
+    if (m.bundled && installed) statusPill = '<span class="pill bundled">bundled</span>';
+    else if (installed) statusPill = '<span class="pill downloaded">downloaded</span>';
     name.innerHTML =
       `<span>${escHtml(m.display_name)}</span>` +
       `<span class="pill">${escHtml(m.params)}</span>` +
       `<span class="pill">${m.size_mb} MB</span>` +
-      (m.bundled
-        ? '<span class="pill bundled">bundled</span>'
-        : (downloaded ? '<span class="pill downloaded">downloaded</span>' : ''));
+      statusPill;
     info.appendChild(name);
 
     const blurb = document.createElement("div");
@@ -862,10 +866,11 @@ function renderModelList(models, selectedId, dlStatus) {
     blurb.textContent = m.blurb;
     info.appendChild(blurb);
 
-    // Download button for non-bundled, not-yet-downloaded models.
+    // Download button only for non-bundled AND not-installed models.
+    // (Full installer ships LFM2.5-1.2B bundled — installed already.)
     const isDownloading =
       dlStatus.model_id === m.id && dlStatus.state === "running";
-    if (!m.bundled && !downloaded && !isDownloading) {
+    if (!installed && !isDownloading && m.url) {
       const btn = document.createElement("button");
       btn.className = "model-action";
       btn.textContent = `↓ Download (${m.size_mb} MB)`;

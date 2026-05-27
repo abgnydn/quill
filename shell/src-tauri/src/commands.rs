@@ -435,8 +435,19 @@ pub fn app_override_remove(
 // ─────────── Model picker ───────────
 
 #[tauri::command]
-pub fn model_list() -> Vec<crate::models::ModelInfo> {
-    crate::models::REGISTRY.iter().cloned().collect()
+pub fn model_list(
+    app: tauri::AppHandle,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Vec<crate::models::ModelInfoExt> {
+    let selected = config.snapshot().selected_model;
+    crate::models::REGISTRY
+        .iter()
+        .map(|m| crate::models::ModelInfoExt {
+            info: m.clone(),
+            installed: crate::models::is_installed(&app, m.id),
+            selected: m.id == selected,
+        })
+        .collect()
 }
 
 #[tauri::command]
