@@ -143,7 +143,7 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
         // Pause short-circuit — when the user toggled Quill paused (via tray
         // or settings), we skip every AXUI read.
         let cfg = config.snapshot();
-        if cfg.paused {
+        if cfg.is_paused_now() {
             if last_paused_state != Some(true) {
                 eprintln!("[quill] paused — overlay silent until resumed");
                 last_paused_state = Some(true);

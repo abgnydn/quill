@@ -48,6 +48,10 @@ pub struct Config {
     /// runs (for the main-window panel) but the overlay stays silent. Used
     /// for screen-shares, demos, calls.
     pub paused: bool,
+    /// Auto-pause-until timestamp (RFC-3339 UTC). When `paused` is false
+    /// but this is set and in the future, [`is_paused_now`] returns true.
+    /// Used by tray menu items like "Pause for 1 hour".
+    pub pause_until: Option<String>,
     /// Per-app override map keyed by bundle ID. Overrides [`engagement_policy`].
     pub app_overrides: HashMap<String, AppOverride>,
 }
@@ -62,6 +66,7 @@ impl Default for Config {
             pending_relaunch: false,
             ignored_words: Vec::new(),
             paused: false,
+            pause_until: None,
             app_overrides: HashMap::new(),
         }
     }
@@ -74,10 +79,68 @@ impl Config {
         self.ignored_words.iter().any(|w| w.to_lowercase() == lw)
     }
 
+    /// Effective pause: either the manual `paused` flag is on, OR the
+    /// `pause_until` timestamp is in the future. The focus tracker
+    /// consults this on every poll so the auto-pause expires without
+    /// any explicit "resume" action.
+    pub fn is_paused_now(&self) -> bool {
+        if self.paused {
+            return true;
+        }
+        if let Some(until) = &self.pause_until {
+            // Best-effort RFC-3339 parse; if it doesn't parse, treat as
+            // not-paused so the user isn't permanently locked out.
+            if let Ok(t) = parse_rfc3339_secs(until) {
+                if t > now_secs() {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Resolve the per-app override for a bundle ID, if any.
     pub fn app_override(&self, bundle_id: &str) -> Option<AppOverride> {
         self.app_overrides.get(bundle_id).copied()
     }
+}
+
+/// UNIX timestamp in seconds, monotonic-ish via SystemTime.
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Parse an RFC-3339 timestamp like "2026-05-27T13:45:00Z" into a UNIX
+/// seconds value. Returns Err on any format issue — caller falls back
+/// to treating the pause as expired.
+fn parse_rfc3339_secs(s: &str) -> Result<u64, ()> {
+    // Y-M-D T H:M:S Z — accept either Z or +HH:MM, simple parse.
+    let s = s.trim();
+    if s.len() < 19 { return Err(()); }
+    let (date, rest) = s.split_at(10);
+    if !rest.starts_with('T') { return Err(()); }
+    let time = &rest[1..9];
+    let mut date_parts = date.split('-');
+    let y: i64 = date_parts.next().ok_or(())?.parse().map_err(|_| ())?;
+    let m: u64 = date_parts.next().ok_or(())?.parse().map_err(|_| ())?;
+    let d: u64 = date_parts.next().ok_or(())?.parse().map_err(|_| ())?;
+    let mut time_parts = time.split(':');
+    let hh: u64 = time_parts.next().ok_or(())?.parse().map_err(|_| ())?;
+    let mm: u64 = time_parts.next().ok_or(())?.parse().map_err(|_| ())?;
+    let ss: u64 = time_parts.next().ok_or(())?.parse().map_err(|_| ())?;
+    // Days since UNIX epoch via the proleptic Gregorian formula.
+    // Source: Howard Hinnant's date algorithms (public domain).
+    let y_adj = y - (m <= 2) as i64;
+    let era = if y_adj >= 0 { y_adj } else { y_adj - 399 } / 400;
+    let yoe = (y_adj - era * 400) as u64;
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146097 + doe as i64 - 719468;
+    if days < 0 { return Err(()); }
+    Ok((days as u64) * 86400 + hh * 3600 + mm * 60 + ss)
 }
 
 pub struct ConfigStore {

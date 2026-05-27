@@ -340,9 +340,64 @@ pub fn pause_toggle(
     config: State<'_, Arc<crate::config::ConfigStore>>,
 ) -> Result<bool, String> {
     config
-        .update(|c| c.paused = !c.paused)
+        .update(|c| {
+            c.paused = !c.paused;
+            // Clear any temporary auto-pause when user manually toggles.
+            if !c.paused {
+                c.pause_until = None;
+            }
+        })
         .map_err(|e| e.to_string())
         .map(|c| c.paused)
+}
+
+/// Pause Nib for `minutes` minutes (auto-resume when the deadline
+/// passes). Sets `pause_until` to now + minutes in RFC-3339 UTC.
+/// `minutes = 0` clears any pending pause.
+#[tauri::command]
+pub fn pause_for_minutes(
+    minutes: u64,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<String, String> {
+    let until = if minutes == 0 {
+        None
+    } else {
+        // Compute future UNIX seconds, format as RFC-3339 UTC.
+        let secs = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+            + minutes * 60;
+        Some(format_unix_rfc3339(secs))
+    };
+    config
+        .update(|c| {
+            c.paused = false; // pause_until takes over
+            c.pause_until = until.clone();
+        })
+        .map_err(|e| e.to_string())?;
+    Ok(until.unwrap_or_else(|| "cleared".into()))
+}
+
+/// Inverse Hinnant date algorithm — UNIX seconds → "YYYY-MM-DDTHH:MM:SSZ".
+fn format_unix_rfc3339(secs: u64) -> String {
+    let days = (secs / 86400) as i64;
+    let time_of_day = secs % 86400;
+    let hh = time_of_day / 3600;
+    let mm = (time_of_day % 3600) / 60;
+    let ss = time_of_day % 60;
+
+    let z = days + 719468;
+    let era = if z >= 0 { z } else { z - 146096 } / 146097;
+    let doe = (z - era * 146097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y_adj = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = y_adj + (m <= 2) as i64;
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, m, d, hh, mm, ss)
 }
 
 // ─────────── Per-app overrides ───────────

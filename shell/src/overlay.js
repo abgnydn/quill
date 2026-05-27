@@ -42,6 +42,8 @@
   const rpGo = $("rp-go");
   const rpApply = $("rp-apply");
   const rpRegen = $("rp-regen");
+  const rpToneRow = $("rp-tone-row");
+  const rpFormalityRow = $("rp-formality-row");
 
   if (!window.__TAURI__ || !window.__TAURI__.event || !window.__TAURI__.core) {
     throw new Error("no tauri api");
@@ -117,12 +119,47 @@
     }).join("");
   }
 
+  // Grammarly's 4-lane category model: each LintKind from Harper is
+  // bucketed into one of four lanes with a distinct color. Matches what
+  // the user gets in Grammarly's hover card — visually classifies issues
+  // at a glance instead of presenting 35 same-color squigglies.
+  //
+  //   correctness  red     — must-fix: spelling, grammar, agreement
+  //   clarity      blue    — style: passive voice, wordiness, readability
+  //   engagement   green   — word choice, vocabulary boost
+  //   delivery     purple  — tone, formality, inclusivity (future)
   const kindClass = (kind) => {
     const k = String(kind).toLowerCase();
-    if (k.includes("spell")) return "spelling";
-    if (k.includes("agreement")) return "agreement";
-    if (k.includes("style") || k.includes("punct") || k.includes("article")) return "style";
-    return "misc";
+    if (k.includes("spell") ||
+        k.includes("typo") ||
+        k.includes("agreement") ||
+        k.includes("capital") ||
+        k.includes("punct") ||
+        k.includes("boundary") ||
+        k.includes("malaprop") ||
+        k.includes("nonstandard") ||
+        k.includes("possessive") ||
+        k.includes("eggcorn") ||
+        k.includes("formatting") ||
+        k.includes("quotes")) return "correctness";
+    if (k.includes("style") ||
+        k.includes("wordy") ||
+        k.includes("passive") ||
+        k.includes("readability") ||
+        k.includes("repetit") ||
+        k.includes("redundan") ||
+        k.includes("longsent") ||
+        k.includes("spellednum")) return "clarity";
+    if (k.includes("enhanc") ||
+        k.includes("wordchoice") ||
+        k.includes("usage") ||
+        k.includes("boring") ||
+        k.includes("vocab")) return "engagement";
+    if (k.includes("tone") ||
+        k.includes("formality") ||
+        k.includes("inclus") ||
+        k.includes("regional")) return "delivery";
+    return "correctness";  // safe default — flag rather than hide
   };
 
   // Static "Why?" lookup, keyed by Harper's `LintKind` Debug name (see
@@ -772,11 +809,41 @@
     rpGo.hidden = false;
     rpGo.disabled = false;
     rpGo.textContent = "Rewrite";
+    // Reset chip selection on each open — tone/formality are per-session.
+    rpToneRow.querySelectorAll(".rp-chip").forEach(c => c.classList.remove("active"));
+    rpFormalityRow.querySelectorAll(".rp-chip").forEach(c => c.classList.remove("active"));
     positionRewritePanel(currentSelection.rect);
     rewritePanel.hidden = false;
     hideTrigger();
     requestAnimationFrame(pushHotRegions);
   });
+
+  // Single-select chip toggle: clicking sets active, clicking again
+  // clears. Click another chip in the same row → swaps active.
+  const wireChipRow = (row) => {
+    row.addEventListener("click", (e) => {
+      const t = e.target;
+      if (!t.classList.contains("rp-chip")) return;
+      const wasActive = t.classList.contains("active");
+      row.querySelectorAll(".rp-chip").forEach(c => c.classList.remove("active"));
+      if (!wasActive) t.classList.add("active");
+    });
+  };
+  wireChipRow(rpToneRow);
+  wireChipRow(rpFormalityRow);
+
+  // Compose an LLM instruction string from the currently-active chips.
+  // Returns null when no chip is active — the caller falls back to the
+  // model's default editing instruction.
+  const composeInstruction = () => {
+    const tone = rpToneRow.querySelector(".rp-chip.active")?.dataset.tone;
+    const formality = rpFormalityRow.querySelector(".rp-chip.active")?.dataset.formality;
+    if (!tone && !formality) return null;
+    const parts = [];
+    if (tone) parts.push(`a ${tone}`);
+    if (formality) parts.push(`${formality}`);
+    return `Rewrite this in ${parts.join(", ")} tone:`;
+  };
 
   rpClose.addEventListener("click", hideRewritePanel);
 
@@ -802,7 +869,9 @@
     });
     try {
       const out = await invoke("rewrite", {
-        text: currentSelection.text, instruction: null, session,
+        text: currentSelection.text,
+        instruction: composeInstruction(),
+        session,
       });
       rpRewrite = String(out || "");
       if (!rpOut.textContent) rpOut.textContent = rpRewrite;

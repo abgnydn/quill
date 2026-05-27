@@ -48,6 +48,25 @@
         <button class="rp-x" id="rp-close" aria-label="Close">×</button>
       </div>
       <div class="rp-source" id="rp-source"></div>
+
+      <!-- Tone × formality picker chips. Click one in each row to bias
+           the rewrite; click again to deselect (clears to neutral). -->
+      <div class="rp-tone-row" id="rp-tone-row">
+        <span class="rp-row-label">tone</span>
+        <button class="rp-chip" data-tone="confident">confident</button>
+        <button class="rp-chip" data-tone="engaging">engaging</button>
+        <button class="rp-chip" data-tone="direct">direct</button>
+        <button class="rp-chip" data-tone="witty">witty</button>
+        <button class="rp-chip" data-tone="personable">personable</button>
+        <button class="rp-chip" data-tone="empathetic">empathetic</button>
+      </div>
+      <div class="rp-tone-row" id="rp-formality-row">
+        <span class="rp-row-label">formality</span>
+        <button class="rp-chip" data-formality="casual">casual</button>
+        <button class="rp-chip" data-formality="neutral">neutral</button>
+        <button class="rp-chip" data-formality="formal">formal</button>
+      </div>
+
       <div class="rp-out-wrap">
         <div class="rp-streaming" id="rp-streaming" hidden></div>
         <div class="rp-out" id="rp-out"></div>

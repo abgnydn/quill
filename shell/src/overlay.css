@@ -45,16 +45,27 @@ html, body {
 .underline:hover, .underline.active {
   filter: brightness(1.25) drop-shadow(0 0 5px currentColor);
 }
-.underline.spelling {
-  /* zig-zag SVG fill */
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'><path d='M0 3 Q 2 0 4 3 T 8 3' stroke='%23ff6b6b' stroke-width='1.4' fill='none'/></svg>");
+/* 4-lane category colors — match Grammarly's mental model.
+   correctness=red (must-fix), clarity=blue (style),
+   engagement=green (vocab), delivery=purple (tone) */
+.underline.correctness {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'><path d='M0 3 Q 2 0 4 3 T 8 3' stroke='%23ff5c5c' stroke-width='1.4' fill='none'/></svg>");
 }
-.underline.agreement {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'><path d='M0 3 Q 2 0 4 3 T 8 3' stroke='%237c9cff' stroke-width='1.4' fill='none'/></svg>");
+.underline.clarity {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'><path d='M0 3 Q 2 0 4 3 T 8 3' stroke='%233a7afe' stroke-width='1.4' fill='none'/></svg>");
 }
-.underline.style, .underline.misc {
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'><path d='M0 3 Q 2 0 4 3 T 8 3' stroke='%23ffb86b' stroke-width='1.4' fill='none'/></svg>");
+.underline.engagement {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'><path d='M0 3 Q 2 0 4 3 T 8 3' stroke='%2334d399' stroke-width='1.4' fill='none'/></svg>");
 }
+.underline.delivery {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 4'><path d='M0 3 Q 2 0 4 3 T 8 3' stroke='%23c084fc' stroke-width='1.4' fill='none'/></svg>");
+}
+
+/* Popover category badge — matches underline color. */
+.pop-kind.correctness span:first-child { color: #ff7878; }
+.pop-kind.clarity     span:first-child { color: #6b9eff; }
+.pop-kind.engagement  span:first-child { color: #4fd6a8; }
+.pop-kind.delivery    span:first-child { color: #c89bff; }
 
 /* === Compact hover popover =============================================== */
 #popover {
@@ -352,6 +363,41 @@ html, body {
   border-radius: 3px;
 }
 .fb-suggs { display: flex; flex-wrap: wrap; gap: 3px; }
+
+/* Tone / formality chip rows inside the rewrite panel. */
+.rp-tone-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+.rp-row-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink);
+  opacity: 0.45;
+  width: 60px;
+  font-weight: 600;
+}
+.rp-chip {
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: var(--ink);
+  cursor: pointer;
+  transition: all 0.12s ease;
+  font-weight: 500;
+}
+.rp-chip:hover { background: rgba(255,255,255,0.12); }
+.rp-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
 
 /* === Selection trigger (Grammarly-style ↓ button) ====================== */
 #sel-trigger {
