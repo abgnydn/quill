@@ -63,6 +63,12 @@
   let currentLints = [];
   let currentFieldBounds = null;
   let activeLintIdx = -1;
+  // Timestamp of the last popover open. While the popover is "fresh"
+  // (< 400ms old), ignore cursor-move-hot events that would swap to a
+  // different lint — gives the user time to move toward THIS popover
+  // without losing it to a nearby underline.
+  let popoverShownAt = 0;
+  const POPOVER_STICKY_MS = 400;
   let hoverHideTimer = null;
   let lastRewrite = "";
 
@@ -269,6 +275,7 @@
     const lint = currentLints[lintIdx];
     if (!lint || !lint.rect) return;
     activeLintIdx = lintIdx;
+    popoverShownAt = performance.now();
     clearTimeout(hoverHideTimer);
     flashCorner();
 
@@ -693,7 +700,15 @@
   listen("cursor-move-hot", (evt) => {
     const { x, y } = evt.payload || {};
     const idx = lintAtPoint(x, y);
-    if (idx >= 0 && idx !== activeLintIdx) showPopover(idx);
+    if (idx < 0 || idx === activeLintIdx) return;
+    // Stickiness window: don't swap popovers if the current one just
+    // appeared. Lets the user move toward the popover past adjacent
+    // underlines without losing it.
+    if (popover.classList.contains("visible") &&
+        performance.now() - popoverShownAt < POPOVER_STICKY_MS) {
+      return;
+    }
+    showPopover(idx);
   });
   listen("cursor-leave-hot", () => {
     ping("cursor-leave-hot", activeLintIdx);
@@ -840,20 +855,33 @@
   // Compose an LLM instruction string from the currently-active chips.
   // Returns null when no chip is active — the caller falls back to the
   // model's default editing instruction ("Fix the grammar and improve
-  // clarity:"). The "preserve every fact and the exact meaning" suffix
-  // exists because LFM2.5-350M happily hallucinates content when a tone
-  // instruction is dominant over the source text — adding the guard
-  // anchors it to the input.
+  // clarity:").
+  //
+  // Instruction design (after observing both LFM2.5-350M and 1.2B
+  // hallucinate "I/you" relationships + corporate filler):
+  //   - Lead with role ("copy editor") — anchors the model away from
+  //     "helpful assistant" persona that wants to elaborate.
+  //   - Numeric constraint ("same number of words, ±20%") — small
+  //     models follow short numeric rules better than long prose
+  //     guards.
+  //   - Explicit deny list — first/second person, commitments,
+  //     relationships, padding. Each one is a real failure mode we
+  //     saw in testing.
+  //   - "Output only the rewritten text" — kills preamble like
+  //     "Sure, here is your rewrite:".
   const composeInstruction = () => {
     const tone = rpToneRow.querySelector(".rp-chip.active")?.dataset.tone;
     const formality = rpFormalityRow.querySelector(".rp-chip.active")?.dataset.formality;
     if (!tone && !formality) return null;
     const parts = [];
-    if (tone) parts.push(`a ${tone}`);
+    if (tone) parts.push(tone);
     if (formality) parts.push(formality);
-    return `Rewrite the following text in ${parts.join(", ")} tone, ` +
-           `preserving every fact and the exact meaning — do not add ` +
-           `information that isn't in the source:`;
+    const style = parts.join(", ");
+    return `You are a copy editor. Restate the user's text in a ${style} tone. ` +
+           `Keep the same number of words (±20%). ` +
+           `Do not introduce first or second person (I/you/we) unless the source uses them. ` +
+           `Do not add commitments, relationships, opinions, or context not in the source. ` +
+           `Do not pad with filler. Output only the rewritten text, nothing else.`;
   };
 
   // Update the instruction badge whenever chips change. Hidden when no
