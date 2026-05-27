@@ -253,14 +253,30 @@
       popBulk.hidden = true;
     }
 
-    // Position above the underline; flip below if not enough room.
+    // Position bottom-right of the word (Grammarly-style). The popover
+    // sits diagonally off the word's bottom-right corner so it never
+    // covers the text you're still reading. Falls back to other corners
+    // when the preferred position would go off-screen.
     const r = lint.rect;
     const W = window.innerWidth, H = window.innerHeight;
     const pw = 280 + 24, ph = 170;
-    let x = r.x + r.w / 2 - pw / 2;
-    let y = r.y - ph - 8;
-    if (y < 8) y = r.y + r.h + 8;
+    const gap = 6;
+
+    // Preferred: bottom-right of word.
+    let x = r.x + r.w + gap;
+    let y = r.y + r.h + gap;
+
+    // Off-right? Pull left so popover's right edge ≤ word's right edge.
+    if (x + pw > W - 8) {
+      x = Math.max(8, Math.min(r.x + r.w - pw, W - pw - 8));
+    }
+    // Off-bottom? Flip to top-right of the word.
+    if (y + ph > H - 8) {
+      y = Math.max(8, r.y - ph - gap);
+    }
+    // Final safety clamp.
     x = Math.max(8, Math.min(x, W - pw - 8));
+    y = Math.max(8, Math.min(y, H - ph - 8));
     popover.style.left = x + "px";
     popover.style.top = y + "px";
     popover.classList.add("visible");
@@ -400,7 +416,12 @@
   }
 
   aiBtn.addEventListener("click", async () => {
-    if (!currentText) return;
+    ping("ai-rewrite-click", currentLints.length,
+      `text_len=${currentText.length}`);
+    if (!currentText) {
+      ping("ai-rewrite-skip", 0, "no currentText");
+      return;
+    }
     aiBtn.disabled = true;
     aiBtnLabel.textContent = "streaming";
     aiBtnSpinner.style.display = "inline-block";
@@ -435,6 +456,7 @@
       }
     } catch (err) {
       aiText.textContent = "error: " + String(err);
+      ping("ai-rewrite-err", 0, String(err));
     } finally {
       unlisten();
       aiText.classList.remove("streaming");
@@ -442,6 +464,7 @@
       aiBtnLabel.textContent = "Rewrite with AI";
       aiBtnSpinner.style.display = "none";
       requestAnimationFrame(pushHotRegions);
+      ping("ai-rewrite-done", lastRewrite.length, "");
     }
   });
   aiApply.addEventListener("click", async () => {
