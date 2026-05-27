@@ -44,6 +44,7 @@
   const rpRegen = $("rp-regen");
   const rpToneRow = $("rp-tone-row");
   const rpFormalityRow = $("rp-formality-row");
+  const rpInstr = $("rp-instr");
 
   if (!window.__TAURI__ || !window.__TAURI__.event || !window.__TAURI__.core) {
     throw new Error("no tauri api");
@@ -812,6 +813,7 @@
     // Reset chip selection on each open — tone/formality are per-session.
     rpToneRow.querySelectorAll(".rp-chip").forEach(c => c.classList.remove("active"));
     rpFormalityRow.querySelectorAll(".rp-chip").forEach(c => c.classList.remove("active"));
+    refreshInstrBadge();
     positionRewritePanel(currentSelection.rect);
     rewritePanel.hidden = false;
     hideTrigger();
@@ -820,6 +822,8 @@
 
   // Single-select chip toggle: clicking sets active, clicking again
   // clears. Click another chip in the same row → swaps active.
+  // Each click also refreshes the instruction badge so the user can see
+  // what we'll send to the model.
   const wireChipRow = (row) => {
     row.addEventListener("click", (e) => {
       const t = e.target;
@@ -827,6 +831,7 @@
       const wasActive = t.classList.contains("active");
       row.querySelectorAll(".rp-chip").forEach(c => c.classList.remove("active"));
       if (!wasActive) t.classList.add("active");
+      refreshInstrBadge();
     });
   };
   wireChipRow(rpToneRow);
@@ -834,21 +839,65 @@
 
   // Compose an LLM instruction string from the currently-active chips.
   // Returns null when no chip is active — the caller falls back to the
-  // model's default editing instruction.
+  // model's default editing instruction ("Fix the grammar and improve
+  // clarity:"). The "preserve every fact and the exact meaning" suffix
+  // exists because LFM2.5-350M happily hallucinates content when a tone
+  // instruction is dominant over the source text — adding the guard
+  // anchors it to the input.
   const composeInstruction = () => {
     const tone = rpToneRow.querySelector(".rp-chip.active")?.dataset.tone;
     const formality = rpFormalityRow.querySelector(".rp-chip.active")?.dataset.formality;
     if (!tone && !formality) return null;
     const parts = [];
     if (tone) parts.push(`a ${tone}`);
-    if (formality) parts.push(`${formality}`);
-    return `Rewrite this in ${parts.join(", ")} tone:`;
+    if (formality) parts.push(formality);
+    return `Rewrite the following text in ${parts.join(", ")} tone, ` +
+           `preserving every fact and the exact meaning — do not add ` +
+           `information that isn't in the source:`;
   };
+
+  // Update the instruction badge whenever chips change. Hidden when no
+  // chips are active (we'll use the default model instruction silently).
+  const refreshInstrBadge = () => {
+    const tone = rpToneRow.querySelector(".rp-chip.active")?.dataset.tone;
+    const formality = rpFormalityRow.querySelector(".rp-chip.active")?.dataset.formality;
+    if (!tone && !formality) {
+      rpInstr.hidden = true;
+      return;
+    }
+    const labels = [];
+    if (tone) labels.push(tone);
+    if (formality) labels.push(formality);
+    rpInstr.innerHTML =
+      '<span class="rp-instr-arrow">→ asking for:</span>' +
+      labels.join(" · ");
+    rpInstr.hidden = false;
+  };
+
+  // Minimum selection length we'll send to the model. Below this, the
+  // model has no context to ground the rewrite and will hallucinate
+  // (turning "manage users: 1 Day" into "Confidently manage user
+  // inquiries…"). 30 chars covers the smallest useful sentence.
+  const MIN_REWRITE_CHARS = 30;
 
   rpClose.addEventListener("click", hideRewritePanel);
 
   const runRewritePanel = async () => {
     if (!currentSelection) return;
+    // Min-length guard: under 30 chars the model has no grounding and
+    // hallucinates. Show a friendly message instead of trying.
+    if (currentSelection.text.trim().length < MIN_REWRITE_CHARS) {
+      rpOut.innerHTML =
+        '<div class="rp-too-short">Select a full sentence (at least ' +
+        MIN_REWRITE_CHARS + ' characters) — the model needs context to ' +
+        'rewrite faithfully. Fragments tend to get hallucinated into ' +
+        'unrelated prose.</div>';
+      rpApply.hidden = true;
+      rpRegen.hidden = true;
+      rpGo.disabled = false;
+      ping("rp-rewrite-too-short", currentSelection.text.length, "");
+      return;
+    }
     rpGo.disabled = true;
     rpGo.textContent = "Streaming…";
     rpStreaming.hidden = false;

@@ -482,7 +482,33 @@ html, body {
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* Instruction-preview badge (shows what we'll ask the model for). */
+.rp-instr {
+  font-size: 11px;
+  color: var(--accent);
+  background: rgba(255,107,74,0.08);
+  border: 1px solid rgba(255,107,74,0.18);
+  padding: 5px 9px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  letter-spacing: 0.02em;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.rp-instr[hidden] { display: none; }
+.rp-instr .rp-instr-arrow { opacity: 0.6; margin-right: 6px; }
+
 .rp-out-wrap { min-height: 40px; margin-bottom: 12px; }
+
+/* Fragment-too-short rejection */
+.rp-too-short {
+  font-size: 12px;
+  color: var(--ink);
+  opacity: 0.75;
+  background: rgba(255,255,255,0.04);
+  padding: 10px 12px;
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+}
 .rp-streaming {
   font-size: 11px;
   color: var(--accent);

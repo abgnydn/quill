@@ -48,6 +48,10 @@
         <button class="rp-x" id="rp-close" aria-label="Close">×</button>
       </div>
       <div class="rp-source" id="rp-source"></div>
+      <!-- Live badge showing the instruction we'll send to the model
+           (composed from the active tone+formality chips). Hidden when
+           no chips are active. -->
+      <div class="rp-instr" id="rp-instr" hidden></div>
 
       <!-- Tone × formality picker chips. Click one in each row to bias
            the rewrite; click again to deselect (clears to neutral). -->
