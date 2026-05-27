@@ -19,16 +19,17 @@
 html, body {
   margin: 0;
   padding: 0;
-  height: 100%;
   background: var(--bg);
   color: var(--fg);
   font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Inter", system-ui, sans-serif;
 }
 
+/* No height:100% — the page grows naturally and the window scrolls.
+   Avoids squeezing the editor area when Settings adds new sections. */
 body {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  min-height: 100vh;
 }
 
 header {
@@ -60,8 +61,8 @@ main {
   grid-template-columns: 1fr 340px;
   gap: var(--gap);
   padding: var(--gap);
-  flex: 1;
-  min-height: 0;
+  flex: 0 0 auto;        /* don't collapse — sized by content */
+  min-height: 380px;     /* hard floor so the editor always has room */
 }
 
 #personal {
@@ -259,7 +260,7 @@ main {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 0;
+  min-height: 320px;     /* leaves room for textarea + actions + rewrite */
 }
 
 textarea {
