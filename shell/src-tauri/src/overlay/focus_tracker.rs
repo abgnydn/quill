@@ -135,6 +135,7 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
     let mut tick = 0u32;
 
     let mut last_paused_state: Option<bool> = None;
+    let mut last_selection: Option<SelectionEvent> = None;
     loop {
         thread::sleep(Duration::from_millis(150));
         tick = tick.wrapping_add(1);
@@ -201,17 +202,50 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
             .unwrap_or(0);
         let text_changed = text_hash != last_text_hash;
 
-        if !bounds_changed && !text_changed {
-            if tick % 60 == 0 {
-                eprintln!("[quill] focus-tracker heartbeat (no change in 9s)");
-            }
-            continue;
-        }
-
+        // Extract elem early so we can poll selection on EVERY tick — the
+        // user can drag a selection without changing bounds or text, and
+        // we still need to surface the selection-update event so the JS
+        // trigger button appears.
         let (bounds, text, elem_ref) = match snap_opt {
             Some(s) => (Some(s.bounds), s.text, s.elem),
             None => (None, None, std::ptr::null_mut()),
         };
+
+        // Selection — read on EVERY tick, emit selection-update event so JS
+        // can show/hide the Grammarly-style trigger button. This runs even
+        // when bounds/text are unchanged (the common "user drags selection"
+        // path), which is why it must come BEFORE the dedupe `continue`.
+        let selection = if !elem_ref.is_null() {
+            read_selection(elem_ref, text.as_deref())
+        } else {
+            None
+        };
+        let sel_event = match &selection {
+            Some(s) if s.length >= 3 => SelectionEvent {
+                rect: s.rect.clone(),
+                text: s.text.clone(),
+                start: Some(s.start),
+                end: Some(s.start + s.length),
+            },
+            _ => SelectionEvent { rect: None, text: None, start: None, end: None },
+        };
+        if last_selection.as_ref() != Some(&sel_event) {
+            let _ = app.emit_to(OVERLAY_LABEL, "selection-update", &sel_event);
+            last_selection = Some(sel_event.clone());
+        }
+
+        if !bounds_changed && !text_changed {
+            if tick % 60 == 0 {
+                eprintln!("[quill] focus-tracker heartbeat (no change in 9s)");
+            }
+            // Still need to release / store the elem_ref. If we just
+            // CFRelease via the cache, the focus-update path that owns
+            // it stays consistent.
+            if !elem_ref.is_null() {
+                crate::overlay::engaged_elem::store(elem_ref as *mut std::ffi::c_void);
+            }
+            continue;
+        }
 
         // Lint the text if we got any. Harper takes ~5-30ms per check on
         // typical sentence-length input. Honor the user's personal
@@ -237,16 +271,6 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
                 PositionedLint { lint, rect }
             })
             .collect();
-
-        // Read the user's current text selection (if any) BEFORE we hand
-        // elem_ref off to the engaged-elem cache. This drives the
-        // Grammarly-style selection trigger in the overlay JS — when the
-        // user selects 3+ chars we emit a `selection-update` event.
-        let selection = if !elem_ref.is_null() {
-            read_selection(elem_ref, text.as_deref())
-        } else {
-            None
-        };
 
         // Transfer the AXUIElement handle into the shared engaged-elem cache
         // so apply.rs can write to it even after the user clicks our overlay
@@ -278,20 +302,6 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
             eprintln!("[quill] emit_to overlay failed: {e}");
         }
         let _ = app.emit("focus-update", &payload);
-
-        // Selection event — independent of focus-update. Sent on every
-        // focus-update tick (cheap when no selection / unchanged) so the
-        // overlay can hide the trigger when selection disappears.
-        let sel_event = match selection {
-            Some(s) if s.length >= 3 => SelectionEvent {
-                rect: s.rect,
-                text: s.text,
-                start: Some(s.start),
-                end: Some(s.start + s.length),
-            },
-            _ => SelectionEvent { rect: None, text: None, start: None, end: None },
-        };
-        let _ = app.emit_to(OVERLAY_LABEL, "selection-update", &sel_event);
 
         last_bounds = bounds;
         last_text_hash = text_hash;
