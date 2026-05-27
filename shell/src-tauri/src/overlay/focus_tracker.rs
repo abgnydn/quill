@@ -151,6 +151,13 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
 
         // Log on every NEW skip context — gives users visible evidence that
         // the engagement filter is working without spamming on every poll.
+        //
+        // SPECIAL CASE: when the focused app is Nib itself (the user clicked
+        // our overlay popover, which activated us), suppress the focus
+        // update entirely. Otherwise the empty event clears currentLints in
+        // JS and leaves stale underlines on screen when the user later
+        // switches to a different app. The cached engaged_elem keeps apply
+        // pointing at the right text field.
         if let SnapshotResult::Skip(ctx) = &snapshot {
             if last_skip.as_ref() != Some(ctx) {
                 eprintln!(
@@ -158,6 +165,10 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
                     ctx.bundle_id, ctx.role, ctx.subrole, ctx.role_description
                 );
                 last_skip = Some(ctx.clone());
+            }
+            if ctx.bundle_id.as_deref() == Some("app.nib") {
+                // Don't propagate — let JS keep its prior focused-field state.
+                continue;
             }
         } else {
             last_skip = None;

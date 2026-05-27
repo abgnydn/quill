@@ -298,15 +298,15 @@
     });
   };
 
-  // Hide delay: 3000ms (was 600ms). Users complained "I just move
-  // cursor and it's gone" — 600ms was barely enough to slide between
-  // underline and popover, definitely not enough to read + decide.
-  // Any interaction with the popover (click on Why?, on a suggestion,
-  // mouseenter) cancels the timer entirely via cancelHide() so it stays
-  // until the user makes an explicit choice or moves on.
+  // Hide delay is context-aware:
+  //   3000ms — when the AI rewrite panel is open (need time to read +
+  //            compare the streamed result, click Apply or Dismiss).
+  //   600ms  — normal hover dismissal (any longer feels clingy).
+  // mouseenter cancels the timer entirely so hovering keeps it open.
   const scheduleHide = () => {
     clearTimeout(hoverHideTimer);
-    hoverHideTimer = setTimeout(hidePopover, 3000);
+    const aiVisible = aiOut.classList.contains("visible");
+    hoverHideTimer = setTimeout(hidePopover, aiVisible ? 3000 : 600);
   };
   const cancelHide = () => clearTimeout(hoverHideTimer);
 
@@ -427,18 +427,81 @@
     hidePopover();
   });
 
-  // ---- AI rewrite (streamed) -----------------------------------------
+  // ---- AI rewrite (streamed, sentence-scoped) ------------------------
   function makeSession() {
     return (crypto.randomUUID ? crypto.randomUUID() : String(Date.now() + Math.random()));
   }
 
+  /**
+   * Find the sentence/paragraph boundaries around character index `pos`
+   * in `text`. Returns { start, end } where text.slice(start, end) is the
+   * smallest natural unit containing pos. Sentence break = . ? ! followed
+   * by whitespace; paragraph break = newline. Caps the slice at 800 chars
+   * so we never send a wall of text to the model.
+   */
+  function sentenceAround(text, pos) {
+    const chars = [...text]; // unicode-safe
+    if (!chars.length) return { start: 0, end: 0 };
+    pos = Math.max(0, Math.min(pos, chars.length));
+
+    let s = pos;
+    while (s > 0) {
+      const c = chars[s - 1];
+      if (c === "\n") break;
+      if ((c === "." || c === "?" || c === "!") &&
+          (s >= chars.length || /\s/.test(chars[s] || ""))) break;
+      s--;
+    }
+    while (s < chars.length && /\s/.test(chars[s])) s++;
+
+    let e = pos;
+    while (e < chars.length) {
+      const c = chars[e];
+      if (c === "\n") break;
+      if ((c === "." || c === "?" || c === "!")) {
+        const next = chars[e + 1];
+        if (next === undefined || /\s/.test(next)) { e++; break; }
+      }
+      e++;
+    }
+    if (e - s > 800) e = s + 800;
+    return { start: s, end: e };
+  }
+
+  // Where in the field the most recent rewrite was scoped — used by aiApply
+  // to write the replacement back over the same character range.
+  let lastRewriteRange = null;
+
   aiBtn.addEventListener("click", async () => {
     ping("ai-rewrite-click", currentLints.length,
-      `text_len=${currentText.length}`);
+      `text_len=${currentText.length} activeLint=${activeLintIdx}`);
     if (!currentText) {
       ping("ai-rewrite-skip", 0, "no currentText");
       return;
     }
+
+    // Scope: the sentence containing the active lint. Falls back to whole
+    // field if there's no active lint (shouldn't happen since the AI button
+    // lives in the popover, but be defensive).
+    const chars = [...currentText];
+    let range;
+    if (activeLintIdx >= 0 && currentLints[activeLintIdx]) {
+      const l = currentLints[activeLintIdx];
+      range = sentenceAround(currentText, l.start);
+      // Guarantee the lint's span is inside the rewrite range.
+      range.start = Math.min(range.start, l.start);
+      range.end = Math.max(range.end, l.end);
+    } else {
+      range = { start: 0, end: chars.length };
+    }
+    const sourceSlice = chars.slice(range.start, range.end).join("");
+    if (!sourceSlice.trim()) {
+      ping("ai-rewrite-skip", 0, "empty slice");
+      return;
+    }
+    ping("ai-rewrite-scope", range.end - range.start,
+      `start=${range.start} end=${range.end}`);
+
     aiBtn.disabled = true;
     aiBtnLabel.textContent = "streaming";
     aiBtnSpinner.style.display = "inline-block";
@@ -462,14 +525,15 @@
 
     try {
       const out = await invoke("rewrite", {
-        text: currentText, instruction: null, session,
+        text: sourceSlice, instruction: null, session,
       });
       lastRewrite = String(out || "");
+      lastRewriteRange = { ...range };
       if (!aiText.textContent) aiText.textContent = lastRewrite;
-      // Once streaming completes, replace raw text with inline diff so the
-      // user can SEE what changed instead of having to mentally compare.
-      if (currentText && lastRewrite && currentText !== lastRewrite) {
-        aiText.innerHTML = renderDiffHtml(currentText, lastRewrite);
+      // Diff against the slice (not the whole field) so the user sees
+      // exactly what the model proposed for the scoped sentence.
+      if (sourceSlice && lastRewrite && sourceSlice !== lastRewrite) {
+        aiText.innerHTML = renderDiffHtml(sourceSlice, lastRewrite);
       }
     } catch (err) {
       aiText.textContent = "error: " + String(err);
@@ -485,16 +549,19 @@
     }
   });
   aiApply.addEventListener("click", async () => {
-    if (!lastRewrite || !currentText) return;
+    if (!lastRewrite || !currentText || !lastRewriteRange) return;
+    const { start, end } = lastRewriteRange;
+    const chars = [...currentText];
+    const applied =
+      chars.slice(0, start).join("") + lastRewrite + chars.slice(end).join("");
     try {
       await invoke("apply_suggestion", {
-        start: 0,
-        end: [...currentText].length,
+        start, end,
         replacement: lastRewrite,
         context: {
           kind: "rewrite_apply",
           source_text: currentText,
-          applied_text: lastRewrite,
+          applied_text: applied,
         },
       });
       hidePopover();
@@ -580,19 +647,10 @@
     const newLints = p.lints || [];
     const newBounds = p.bounds || null;
 
-    // CRITICAL: when the popover is visible and the new focus-update is
-    // EMPTY (bounds=null AND lints=0), it's almost certainly because
-    // clicking on our overlay stole AXUI focus from the user's writing
-    // app — not a real focus change. Ignore it, otherwise we clobber
-    // currentText / currentLints and the subsequent button click finds
-    // nothing to apply.
-    const popoverVisible = popover.classList.contains("visible");
-    const isStealEvent = !newBounds && newLints.length === 0 && !newText;
-    if (popoverVisible && isStealEvent) {
-      ping("event-ignored-focus-steal", eventCount, "popover open + empty update");
-      return;
-    }
-
+    // (Rust focus_tracker now suppresses focus-updates when Nib itself is
+    // the focused app — so an empty update here means the user actually
+    // switched to a non-engaged app like Cursor/Terminal. Clear state +
+    // hide the popover so stale underlines don't linger on the new window.)
     currentText = newText;
     currentLints = newLints;
     currentFieldBounds = newBounds;
