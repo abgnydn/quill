@@ -116,6 +116,28 @@ pub fn run() {
                 .register(rewrite_shortcut)
                 .unwrap_or_else(|e| eprintln!("[quill] could not register ⌘⇧R: {e}"));
 
+            // Config: load (or create) ~/Library/Application Support/Quill/config.json
+            // (loaded before the tray so the Pause/Resume menu item can reflect
+            // the persisted `paused` state at startup.)
+            let config = match config::ConfigStore::open_default() {
+                Ok(c) => {
+                    eprintln!("[quill] config at {}", c.path().display());
+                    std::sync::Arc::new(c)
+                }
+                Err(e) => {
+                    eprintln!("[quill] config open failed: {e} (using defaults in memory)");
+                    std::sync::Arc::new(
+                        config::ConfigStore::open_default()
+                            .unwrap_or_else(|_| {
+                                // Last-resort: in-memory only. open_default writes
+                                // through, so two failures imply HOME is unwritable.
+                                unreachable!("config fallback unreachable in practice")
+                            }),
+                    )
+                }
+            };
+            app.manage(config.clone());
+
             // ---- Menubar tray ------------------------------------------
             // Quill runs as an LSUIElement — no dock icon, no main app
             // menu. The tray icon is the only persistent surface.
@@ -123,19 +145,72 @@ pub fn run() {
                 use tauri::menu::{Menu, MenuItem};
                 use tauri::tray::TrayIconBuilder;
 
-                let show = MenuItem::with_id(app, "show", "Show Quill", true, None::<&str>)?;
-                let train = MenuItem::with_id(
-                    app, "train", "Train personal adapter…", true, None::<&str>,
-                )?;
-                let quit = MenuItem::with_id(app, "quit", "Quit Quill", true, Some("Cmd+Q"))?;
-                let menu = Menu::with_items(app, &[&show, &train, &quit])?;
+                // Build the menu fresh each time we need to refresh the
+                // Pause/Resume label. Cheap and avoids holding MenuItem
+                // handles across the closure boundary.
+                fn build_tray_menu<R: tauri::Runtime>(
+                    app: &tauri::AppHandle<R>,
+                    paused: bool,
+                ) -> tauri::Result<tauri::menu::Menu<R>> {
+                    let pause_label = if paused { "Resume Quill" } else { "Pause Quill" };
+                    let pause = MenuItem::with_id(
+                        app, "pause-toggle", pause_label, true, None::<&str>,
+                    )?;
+                    let settings = MenuItem::with_id(
+                        app, "open-settings", "Open Settings…", true, None::<&str>,
+                    )?;
+                    let show = MenuItem::with_id(app, "show", "Show Quill", true, None::<&str>)?;
+                    let train = MenuItem::with_id(
+                        app, "train", "Train personal adapter…", true, None::<&str>,
+                    )?;
+                    let sep1 = tauri::menu::PredefinedMenuItem::separator(app)?;
+                    let sep2 = tauri::menu::PredefinedMenuItem::separator(app)?;
+                    let quit = MenuItem::with_id(app, "quit", "Quit Quill", true, Some("Cmd+Q"))?;
+                    Menu::with_items(
+                        app, &[&pause, &settings, &sep1, &show, &train, &sep2, &quit],
+                    )
+                }
 
+                let initial_paused = config.snapshot().paused;
+                let menu = build_tray_menu(app.handle(), initial_paused)?;
+
+                let config_for_tray = config.clone();
                 let _tray = TrayIconBuilder::with_id("main")
                     .tooltip("Quill — local-first grammar")
                     .menu(&menu)
                     .icon(app.default_window_icon().expect("icon").clone())
                     .icon_as_template(true)
-                    .on_menu_event(|app, event| match event.id.as_ref() {
+                    .on_menu_event(move |app, event| match event.id.as_ref() {
+                        "pause-toggle" => {
+                            // Flip the persisted paused flag, then rebuild
+                            // the menu so the label flips Pause ↔ Resume.
+                            let new_paused = match config_for_tray
+                                .update(|c| c.paused = !c.paused)
+                            {
+                                Ok(c) => c.paused,
+                                Err(e) => {
+                                    eprintln!("[quill][tray] pause toggle failed: {e}");
+                                    return;
+                                }
+                            };
+                            if let Some(tray) = app.tray_by_id("main") {
+                                match build_tray_menu(app, new_paused) {
+                                    Ok(m) => {
+                                        let _ = tray.set_menu(Some(m));
+                                    }
+                                    Err(e) => eprintln!(
+                                        "[quill][tray] menu rebuild failed: {e}"
+                                    ),
+                                }
+                            }
+                        }
+                        "open-settings" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                let _ = w.unminimize();
+                                let _ = w.show();
+                                let _ = w.set_focus();
+                            }
+                        }
                         "show" => {
                             if let Some(w) = app.get_webview_window("main") {
                                 let _ = w.show();
@@ -209,26 +284,6 @@ pub fn run() {
                 backend_config.base_model,
             );
             app.manage(backend_config.clone());
-
-            // Config: load (or create) ~/Library/Application Support/Quill/config.json
-            let config = match config::ConfigStore::open_default() {
-                Ok(c) => {
-                    eprintln!("[quill] config at {}", c.path().display());
-                    std::sync::Arc::new(c)
-                }
-                Err(e) => {
-                    eprintln!("[quill] config open failed: {e} (using defaults in memory)");
-                    std::sync::Arc::new(
-                        config::ConfigStore::open_default()
-                            .unwrap_or_else(|_| {
-                                // Last-resort: in-memory only. open_default writes
-                                // through, so two failures imply HOME is unwritable.
-                                unreachable!("config fallback unreachable in practice")
-                            }),
-                    )
-                }
-            };
-            app.manage(config.clone());
 
             // Background scheduler — only when LLM feature is on (no
             // training infrastructure otherwise).
