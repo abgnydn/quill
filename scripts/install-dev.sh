@@ -2,9 +2,9 @@
 # Install + relaunch dance for the Quill .app during local development.
 #
 #   Why this exists: each rebuild needs to (a) kill any running Quill, (b)
-#   replace ~/Applications/Quill.app, (c) re-codesign with the stable
-#   `io.quill.app` identifier so the TCC Accessibility grant survives, and
-#   (d) launch a fresh process with stderr piped to /tmp/quill.log so the
+#   replace ~/Applications/Nib.app, (c) re-codesign with the stable
+#   `app.nib` identifier so the TCC Accessibility grant survives, and
+#   (d) launch a fresh process with stderr piped to /tmp/nib.log so the
 #   focus-tracker + arbiter logs are tailable.
 #
 #   Usage:
@@ -14,7 +14,7 @@
 #       ./scripts/install-dev.sh --build --tail # rebuild then tail the log
 #
 #   Codesigning note: we ad-hoc sign with `-` so the binary's identifier
-#   stays `io.quill.app` across rebuilds (Tauri's default per-build random
+#   stays `app.nib` across rebuilds (Tauri's default per-build random
 #   identifier invalidates TCC grants).
 #
 #   --fast vs --build:
@@ -26,17 +26,17 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-APP_NAME="Quill.app"
+APP_NAME="Nib.app"
 BUILT_APP="$REPO_ROOT/shell/src-tauri/target/release/bundle/macos/$APP_NAME"
 INSTALL_DIR="$HOME/Applications"
 INSTALL_PATH="$INSTALL_DIR/$APP_NAME"
-LOG="/tmp/quill.log"
+LOG="/tmp/nib.log"
 QVAC_CACHE="$HOME/.cache/qvac/qvac-fabric-llm.cpp"
 QVAC_RESOURCES="$REPO_ROOT/shell/src-tauri/resources/qvac"
 
 # Build QVAC (BitNet + on-device LoRA training engine) once, cache the
 # binaries under ~/.cache/qvac/, then copy them into the Tauri resources
-# directory so they get bundled inside Quill.app/Contents/Resources/qvac/.
+# directory so they get bundled inside Nib.app/Contents/Resources/qvac/.
 prepare_qvac() {
   mkdir -p "$QVAC_RESOURCES"
   local need_build=0

@@ -38,3 +38,6 @@ logs/
 # resource-bundling glob always matches at least one file.
 shell/src-tauri/resources/qvac/*
 !shell/src-tauri/resources/qvac/README.md
+
+# claude-code agent worktrees (locally managed)
+.claude/worktrees/
