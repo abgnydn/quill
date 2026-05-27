@@ -545,9 +545,26 @@
   listen("focus-update", (evt) => {
     eventCount++;
     const p = evt.payload || {};
-    currentText = p.text || "";
-    currentLints = p.lints || [];
-    currentFieldBounds = p.bounds || null;
+    const newText = p.text || "";
+    const newLints = p.lints || [];
+    const newBounds = p.bounds || null;
+
+    // CRITICAL: when the popover is visible and the new focus-update is
+    // EMPTY (bounds=null AND lints=0), it's almost certainly because
+    // clicking on our overlay stole AXUI focus from the user's writing
+    // app — not a real focus change. Ignore it, otherwise we clobber
+    // currentText / currentLints and the subsequent button click finds
+    // nothing to apply.
+    const popoverVisible = popover.classList.contains("visible");
+    const isStealEvent = !newBounds && newLints.length === 0 && !newText;
+    if (popoverVisible && isStealEvent) {
+      ping("event-ignored-focus-steal", eventCount, "popover open + empty update");
+      return;
+    }
+
+    currentText = newText;
+    currentLints = newLints;
+    currentFieldBounds = newBounds;
     updateCorner();
     flashCorner();
     const inline = currentLints.filter((l) => l.rect).length;
