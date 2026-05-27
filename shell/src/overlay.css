@@ -353,6 +353,127 @@ html, body {
 }
 .fb-suggs { display: flex; flex-wrap: wrap; gap: 3px; }
 
+/* === Selection trigger (Grammarly-style ↓ button) ====================== */
+#sel-trigger {
+  position: absolute;
+  pointer-events: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: #3a7afe;     /* Grammarly-blue */
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(58, 122, 254, 0.5), 0 0 0 1px rgba(255,255,255,0.1);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  z-index: 9998;
+  user-select: none;
+}
+#sel-trigger:hover {
+  transform: scale(1.08);
+  box-shadow: 0 6px 18px rgba(58, 122, 254, 0.7), 0 0 0 1px rgba(255,255,255,0.2);
+}
+#sel-trigger:active { transform: scale(0.95); }
+#sel-trigger[hidden] { display: none; }
+.sel-trigger-arrow {
+  display: inline-block;
+  transform: translateY(1px);
+}
+
+/* === Rewrite panel (selection-scoped, separate from hover popover) ===== */
+#rewrite-panel {
+  position: absolute;
+  pointer-events: auto;
+  width: 380px;
+  max-height: 75vh;
+  overflow-y: auto;
+  background: var(--bg-popover);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pop);
+  padding: 14px 16px 12px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255,255,255,0.04);
+  color: var(--ink);
+  font-size: 13.5px;
+  line-height: 1.45;
+  z-index: 9999;
+}
+#rewrite-panel[hidden] { display: none; }
+.rp-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.rp-title {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+  font-weight: 600;
+}
+.rp-x {
+  background: transparent; border: none; color: var(--ink);
+  opacity: 0.6; font-size: 16px; cursor: pointer; padding: 0 4px;
+  border-radius: 4px;
+}
+.rp-x:hover { opacity: 1; background: rgba(255,255,255,0.06); }
+.rp-source {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 12px;
+  background: rgba(255,255,255,0.04);
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 10px;
+  max-height: 100px;
+  overflow-y: auto;
+  color: var(--ink);
+  opacity: 0.85;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.rp-out-wrap { min-height: 40px; margin-bottom: 12px; }
+.rp-streaming {
+  font-size: 11px;
+  color: var(--accent);
+  letter-spacing: 0.06em;
+}
+.rp-streaming::before {
+  content: "● "; animation: rpPulse 1s infinite;
+}
+@keyframes rpPulse { 50% { opacity: 0.3; } }
+.rp-out {
+  font-size: 13.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--ink);
+  line-height: 1.5;
+}
+.rp-out ins { color: var(--accent); text-decoration: none; background: rgba(255,180,140,0.08); padding: 0 2px; border-radius: 2px; }
+.rp-out del { color: var(--ink); opacity: 0.45; text-decoration: line-through; }
+.rp-actions {
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.rp-btn {
+  font-size: 13px; font-weight: 500;
+  padding: 7px 14px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--bg-chip);
+  color: var(--ink); cursor: pointer;
+  transition: all 0.12s ease;
+}
+.rp-btn:hover { background: rgba(255,255,255,0.08); }
+.rp-btn.rp-go,
+.rp-btn.rp-apply {
+  background: var(--accent); border-color: var(--accent); color: white;
+}
+.rp-btn.rp-go:hover,
+.rp-btn.rp-apply:hover { background: var(--accent-2, var(--accent)); filter: brightness(1.1); }
+.rp-btn:disabled { opacity: 0.5; cursor: wait; }
+.rp-btn[hidden] { display: none; }
+
 /* === Corner status badge ================================================ */
 #corner {
   position: fixed;

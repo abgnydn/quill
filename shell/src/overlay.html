@@ -45,6 +45,31 @@
     <!-- #corner removed: the floating chip cluttered the desktop. The
          menubar tray icon is the only ambient presence Nib needs. -->
 
+    <!-- Selection trigger — small blue ↓ button anchored to the left
+         of the user's text selection. Click opens the rewrite panel. -->
+    <button id="sel-trigger" type="button" aria-label="Rewrite selection" hidden>
+      <span class="sel-trigger-arrow">↓</span>
+    </button>
+
+    <!-- Selection-scoped rewrite panel (independent of the hover popover).
+         Opens via the selection trigger; closes on dismiss or apply. -->
+    <div id="rewrite-panel" role="dialog" aria-label="Rewrite selection" hidden>
+      <div class="rp-head">
+        <span class="rp-title">Rewrite selection</span>
+        <button class="rp-x" id="rp-close" aria-label="Close">×</button>
+      </div>
+      <div class="rp-source" id="rp-source"></div>
+      <div class="rp-out-wrap">
+        <div class="rp-streaming" id="rp-streaming" hidden></div>
+        <div class="rp-out" id="rp-out"></div>
+      </div>
+      <div class="rp-actions">
+        <button class="rp-btn rp-go" id="rp-go">Rewrite</button>
+        <button class="rp-btn rp-apply" id="rp-apply" hidden>✓ Apply</button>
+        <button class="rp-btn rp-regen" id="rp-regen" hidden>↻ Regenerate</button>
+      </div>
+    </div>
+
     <script src="overlay.js"></script>
   </body>
 </html>

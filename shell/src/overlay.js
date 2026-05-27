@@ -28,6 +28,17 @@
   const aiText = $("ai-text");
   const aiApply = $("ai-apply");
   const aiDismiss = $("ai-dismiss");
+  // Selection trigger + rewrite panel — Grammarly-style separate surface
+  // for selection-scoped rewrites (independent of the hover popover).
+  const selTrigger = $("sel-trigger");
+  const rewritePanel = $("rewrite-panel");
+  const rpClose = $("rp-close");
+  const rpSource = $("rp-source");
+  const rpStreaming = $("rp-streaming");
+  const rpOut = $("rp-out");
+  const rpGo = $("rp-go");
+  const rpApply = $("rp-apply");
+  const rpRegen = $("rp-regen");
 
   if (!window.__TAURI__ || !window.__TAURI__.event || !window.__TAURI__.core) {
     throw new Error("no tauri api");
@@ -191,6 +202,16 @@
     }
     if (fallbackEl.classList.contains("visible")) {
       const r = fallbackEl.getBoundingClientRect();
+      rects.push({ x: r.left - 4, y: r.top - 4, w: r.width + 8, h: r.height + 8 });
+    }
+    // Selection trigger (small blue ↓ button) — needs to be clickable.
+    if (!selTrigger.hidden) {
+      const r = selTrigger.getBoundingClientRect();
+      rects.push({ x: r.left - 6, y: r.top - 6, w: r.width + 12, h: r.height + 12 });
+    }
+    // Rewrite panel (selection-scoped) — interactive surface.
+    if (!rewritePanel.hidden) {
+      const r = rewritePanel.getBoundingClientRect();
       rects.push({ x: r.left - 4, y: r.top - 4, w: r.width + 8, h: r.height + 8 });
     }
     invoke("overlay_set_hot_regions", { rects }).catch(() => {});
@@ -668,4 +689,161 @@
     renderUnderlines();
   }).then(() => ping("listen-registered", 0))
     .catch((err) => ping("listen-error", 0, String(err)));
+
+  // ---- Selection trigger + rewrite panel ------------------------------
+  // Tracks the most recent selection-update so the rewrite panel knows
+  // what text to send to the model and what range to apply over.
+  let currentSelection = null;  // { rect, text, start, end } | null
+  let rpSession = null;
+  let rpRewrite = "";
+
+  const hideTrigger = () => { selTrigger.hidden = true; };
+  const hideRewritePanel = () => {
+    rewritePanel.hidden = true;
+    rpRewrite = "";
+    rpApply.hidden = true;
+    rpRegen.hidden = true;
+    rpOut.textContent = "";
+    rpStreaming.hidden = true;
+    requestAnimationFrame(pushHotRegions);
+  };
+
+  const positionTrigger = (rect) => {
+    // Anchor ~6px to the LEFT of the selection's left edge, vertically
+    // centered. Falls back to clamping inside the visible viewport.
+    const W = screen.availWidth, H = screen.availHeight;
+    const size = 28;
+    let x = rect.x - size - 6;
+    let y = rect.y + (rect.h / 2) - (size / 2);
+    if (x < 8) x = rect.x + rect.w + 6;       // flip to the right if no room
+    x = Math.max(8, Math.min(x, W - size - 8));
+    y = Math.max(8, Math.min(y, H - size - 8));
+    selTrigger.style.left = x + "px";
+    selTrigger.style.top  = y + "px";
+  };
+
+  const positionRewritePanel = (rect) => {
+    // Position below-right of the selection's bottom-right corner, with
+    // the same screen-bounds clamping logic as the hover popover.
+    const W = screen.availWidth, H = screen.availHeight;
+    const pw = 380 + 24;
+    let x = rect.x + rect.w + 12;
+    let y = rect.y + rect.h + 8;
+    if (x + pw > W - 8) x = Math.max(8, W - pw - 8);
+    const spaceBelow = H - (rect.y + rect.h) - 16;
+    rewritePanel.style.maxHeight = Math.max(220, spaceBelow) + "px";
+    rewritePanel.style.left = x + "px";
+    rewritePanel.style.top  = y + "px";
+    requestAnimationFrame(() => {
+      const pb = rewritePanel.getBoundingClientRect();
+      if (y + pb.height > H - 8) {
+        const aboveY = rect.y - pb.height - 8;
+        rewritePanel.style.top = Math.max(8, aboveY) + "px";
+      }
+      pushHotRegions();
+    });
+  };
+
+  listen("selection-update", (evt) => {
+    const p = evt.payload || {};
+    currentSelection = (p.rect && p.text)
+      ? { rect: p.rect, text: p.text, start: p.start, end: p.end }
+      : null;
+    if (!currentSelection) {
+      // No selection → hide trigger. Don't auto-hide the rewrite panel
+      // mid-rewrite (user might still want to apply the result).
+      hideTrigger();
+      return;
+    }
+    positionTrigger(currentSelection.rect);
+    selTrigger.hidden = false;
+    requestAnimationFrame(pushHotRegions);
+  }).catch((err) => ping("sel-listen-err", 0, String(err)));
+
+  selTrigger.addEventListener("click", () => {
+    if (!currentSelection) return;
+    ping("sel-trigger-click", currentSelection.text.length, "");
+    rpSource.textContent = currentSelection.text;
+    rpOut.textContent = "";
+    rpStreaming.hidden = true;
+    rpApply.hidden = true;
+    rpRegen.hidden = true;
+    rpGo.hidden = false;
+    rpGo.disabled = false;
+    rpGo.textContent = "Rewrite";
+    positionRewritePanel(currentSelection.rect);
+    rewritePanel.hidden = false;
+    hideTrigger();
+    requestAnimationFrame(pushHotRegions);
+  });
+
+  rpClose.addEventListener("click", hideRewritePanel);
+
+  const runRewritePanel = async () => {
+    if (!currentSelection) return;
+    rpGo.disabled = true;
+    rpGo.textContent = "Streaming…";
+    rpStreaming.hidden = false;
+    rpStreaming.textContent = "model generating…";
+    rpOut.textContent = "";
+    rpApply.hidden = true;
+    rpRegen.hidden = true;
+    const session = makeSession();
+    rpSession = session;
+    const unlisten = await listen("rewrite-token", (evt) => {
+      const p = evt.payload || {};
+      if (p.session !== session) return;
+      if (p.done) { rpStreaming.hidden = true; return; }
+      if (p.delta) {
+        rpOut.textContent += p.delta;
+        requestAnimationFrame(pushHotRegions);
+      }
+    });
+    try {
+      const out = await invoke("rewrite", {
+        text: currentSelection.text, instruction: null, session,
+      });
+      rpRewrite = String(out || "");
+      if (!rpOut.textContent) rpOut.textContent = rpRewrite;
+      // Show inline diff against the original selection.
+      if (currentSelection.text && rpRewrite && currentSelection.text !== rpRewrite) {
+        rpOut.innerHTML = renderDiffHtml(currentSelection.text, rpRewrite);
+      }
+      rpApply.hidden = false;
+      rpRegen.hidden = false;
+      rpGo.hidden = true;
+    } catch (err) {
+      rpOut.textContent = "error: " + String(err);
+      rpGo.disabled = false;
+      rpGo.textContent = "Retry";
+      ping("rp-rewrite-err", 0, String(err));
+    } finally {
+      unlisten();
+      rpStreaming.hidden = true;
+    }
+  };
+
+  rpGo.addEventListener("click", runRewritePanel);
+  rpRegen.addEventListener("click", runRewritePanel);
+  rpApply.addEventListener("click", async () => {
+    if (!currentSelection || !rpRewrite) return;
+    const { start, end, text: orig } = currentSelection;
+    const chars = [...currentText];
+    const applied = chars.slice(0, start).join("") + rpRewrite + chars.slice(end).join("");
+    try {
+      await invoke("apply_suggestion", {
+        start, end,
+        replacement: rpRewrite,
+        context: {
+          kind: "rewrite_apply",
+          source_text: currentText,
+          applied_text: applied,
+        },
+      });
+      ping("rp-apply-ok", rpRewrite.length, `${orig.length}→${rpRewrite.length}`);
+      hideRewritePanel();
+    } catch (err) {
+      ping("rp-apply-err", 0, String(err));
+    }
+  });
 })();

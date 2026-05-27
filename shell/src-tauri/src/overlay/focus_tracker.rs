@@ -15,9 +15,9 @@ use accessibility_sys::{
     AXUIElementRef, AXValueCreate, AXValueGetValue, AXValueRef,
     kAXBoundsForRangeParameterizedAttribute, kAXErrorSuccess, kAXFocusedApplicationAttribute,
     kAXFocusedUIElementAttribute, kAXPositionAttribute, kAXRoleAttribute,
-    kAXRoleDescriptionAttribute, kAXSizeAttribute, kAXSubroleAttribute,
-    kAXTrustedCheckOptionPrompt, kAXValueAttribute, kAXValueTypeCFRange, kAXValueTypeCGPoint,
-    kAXValueTypeCGRect, kAXValueTypeCGSize,
+    kAXRoleDescriptionAttribute, kAXSelectedTextRangeAttribute, kAXSizeAttribute,
+    kAXSubroleAttribute, kAXTrustedCheckOptionPrompt, kAXValueAttribute,
+    kAXValueTypeCFRange, kAXValueTypeCGPoint, kAXValueTypeCGRect, kAXValueTypeCGSize,
 };
 use core_foundation::base::{CFIndex, CFRange, CFType};
 use core_graphics::geometry::CGRect;
@@ -74,6 +74,21 @@ pub struct FocusEvent {
     pub bounds: Option<FocusBounds>,
     pub text: Option<String>,
     pub lints: Vec<PositionedLint>,
+}
+
+/// Snapshot of the user's current text selection in the focused field.
+/// Emitted as `selection-update` events to the overlay so JS can render
+/// a Grammarly-style trigger button at the selection's edge.
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct SelectionEvent {
+    /// On-screen bounds of the selected text span. None when nothing is
+    /// selected — JS uses this to hide the trigger.
+    pub rect: Option<FocusBounds>,
+    /// The selected text (capped at 4000 chars to avoid IPC bloat).
+    pub text: Option<String>,
+    /// Character offsets within the focused field, for apply round-trip.
+    pub start: Option<u32>,
+    pub end: Option<u32>,
 }
 
 /// Spawn the polling thread. Returns immediately; logs Accessibility-permission
@@ -223,6 +238,16 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
             })
             .collect();
 
+        // Read the user's current text selection (if any) BEFORE we hand
+        // elem_ref off to the engaged-elem cache. This drives the
+        // Grammarly-style selection trigger in the overlay JS — when the
+        // user selects 3+ chars we emit a `selection-update` event.
+        let selection = if !elem_ref.is_null() {
+            read_selection(elem_ref, text.as_deref())
+        } else {
+            None
+        };
+
         // Transfer the AXUIElement handle into the shared engaged-elem cache
         // so apply.rs can write to it even after the user clicks our overlay
         // (which would shift live AXUI focus away from their text field).
@@ -254,9 +279,74 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
         }
         let _ = app.emit("focus-update", &payload);
 
+        // Selection event — independent of focus-update. Sent on every
+        // focus-update tick (cheap when no selection / unchanged) so the
+        // overlay can hide the trigger when selection disappears.
+        let sel_event = match selection {
+            Some(s) if s.length >= 3 => SelectionEvent {
+                rect: s.rect,
+                text: s.text,
+                start: Some(s.start),
+                end: Some(s.start + s.length),
+            },
+            _ => SelectionEvent { rect: None, text: None, start: None, end: None },
+        };
+        let _ = app.emit_to(OVERLAY_LABEL, "selection-update", &sel_event);
+
         last_bounds = bounds;
         last_text_hash = text_hash;
     }
+}
+
+/// Internal snapshot of the user's selection in the focused field.
+struct SelectionSnapshot {
+    start: u32,
+    length: u32,
+    rect: Option<FocusBounds>,
+    text: Option<String>,
+}
+
+/// Read `kAXSelectedTextRangeAttribute` from the focused element and
+/// resolve it to screen bounds + selected text. Returns None when
+/// nothing is selected (or AXUI rejects the attribute).
+fn read_selection(elem: AXUIElementRef, full_text: Option<&str>) -> Option<SelectionSnapshot> {
+    let val = copy_attr(elem, kAXSelectedTextRangeAttribute)?;
+    let mut range = core_foundation::base::CFRange { location: 0, length: 0 };
+    let ok = unsafe {
+        AXValueGetValue(
+            val as AXValueRef,
+            kAXValueTypeCFRange,
+            &mut range as *mut _ as *mut std::ffi::c_void,
+        )
+    };
+    unsafe { CFRelease(val as core_foundation::base::CFTypeRef) };
+    if !ok || range.length < 1 {
+        return None;
+    }
+    let start = range.location as usize;
+    let length = range.length as usize;
+
+    // Bounds: same parameterized AXUI call we use for lint rendering.
+    let rect = bounds_for_range(elem, start, length);
+
+    // Selected text: slice the full field text by character (Unicode-safe).
+    let selected_text = full_text.and_then(|t| {
+        let chars: Vec<char> = t.chars().collect();
+        let end = start.saturating_add(length);
+        if start >= chars.len() || end > chars.len() {
+            return None;
+        }
+        // Cap at 4000 chars to avoid IPC bloat for accidental "Cmd+A" cases.
+        let len = (end - start).min(4000);
+        Some(chars[start..start + len].iter().collect::<String>())
+    });
+
+    Some(SelectionSnapshot {
+        start: start as u32,
+        length: length as u32,
+        rect,
+        text: selected_text,
+    })
 }
 
 /// Fresh-read trust check. `prompt=true` shows the system dialog if not
