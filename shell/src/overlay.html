@@ -2,18 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Quill Overlay</title>
+    <title>Nib Overlay</title>
     <link rel="stylesheet" href="overlay.css" />
   </head>
   <body>
     <div id="underlines"></div>
 
     <div id="fallback">
-      <div class="fb-header" id="fb-header">Quill</div>
+      <div class="fb-header" id="fb-header">Nib</div>
       <div id="fb-list"></div>
     </div>
 
-    <div id="popover" role="dialog" aria-label="Quill suggestion">
+    <div id="popover" role="dialog" aria-label="Nib suggestion">
       <div class="pop-bulk" id="pop-bulk" hidden>
         <button class="pop-bulk-btn accept" id="pop-bulk-accept" title="Apply the first suggestion of every lint">Accept all</button>
         <button class="pop-bulk-btn dismiss" id="pop-bulk-dismiss" title="Close this popover">Dismiss all</button>
@@ -42,7 +42,8 @@
       </div>
     </div>
 
-    <div id="corner">Quill</div>
+    <!-- #corner removed: the floating chip cluttered the desktop. The
+         menubar tray icon is the only ambient presence Nib needs. -->
 
     <script src="overlay.js"></script>
   </body>

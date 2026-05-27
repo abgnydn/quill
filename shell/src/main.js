@@ -578,9 +578,9 @@ personalTrain.addEventListener("click", async () => {
 trainInstall.addEventListener("click", async () => {
   try {
     const dest = await invoke("train_personal_install");
-    trainStage.textContent = `installed → ${dest}\nQuit and relaunch Quill to load the adapter.`;
+    trainStage.textContent = `installed → ${dest}\nQuit and relaunch Nib to load the adapter.`;
     trainInstall.disabled = true;
-    trainInstall.textContent = "✓ Installed — relaunch Quill";
+    trainInstall.textContent = "✓ Installed — relaunch Nib";
   } catch (e) {
     trainError.textContent = String(e);
   }
@@ -664,7 +664,7 @@ function renderPause(paused) {
 function renderDict(words) {
   if (!Array.isArray(words) || words.length === 0) {
     dictList.innerHTML =
-      `<div class="settings-empty">No words yet. Add names/jargon Quill shouldn't flag.</div>`;
+      `<div class="settings-empty">No words yet. Add names/jargon Nib shouldn't flag.</div>`;
     return;
   }
   dictList.innerHTML = words

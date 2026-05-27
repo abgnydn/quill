@@ -1,4 +1,4 @@
-// Quill overlay — runtime.
+// Nib overlay — runtime.
 //
 // All state + DOM logic for the click-through overlay window. Receives
 // `focus-update` events from the Rust focus_tracker, `cursor-{enter,move,
@@ -7,7 +7,6 @@
 
 (() => {
   const $ = (id) => document.getElementById(id);
-  const corner = $("corner");
   const underlinesEl = $("underlines");
   const fallbackEl = $("fallback");
   const fbHeader = $("fb-header");
@@ -31,7 +30,6 @@
   const aiDismiss = $("ai-dismiss");
 
   if (!window.__TAURI__ || !window.__TAURI__.event || !window.__TAURI__.core) {
-    corner.textContent = "?T";
     throw new Error("no tauri api");
   }
   const { listen } = window.__TAURI__.event;
@@ -49,25 +47,13 @@
   let currentFieldBounds = null;
   let activeLintIdx = -1;
   let hoverHideTimer = null;
-  let cornerIdleTimer = null;
   let lastRewrite = "";
 
-  // ---- corner badge with idle fade ------------------------------------
-  const flashCorner = () => {
-    corner.classList.remove("idle");
-    corner.classList.add("hot");
-    clearTimeout(cornerIdleTimer);
-    cornerIdleTimer = setTimeout(() => {
-      corner.classList.remove("hot");
-      corner.classList.add("idle");
-    }, 2500);
-  };
-  const updateCorner = () => {
-    const n = currentLints.length;
-    corner.textContent = n ? `Quill · ${n}` : "Quill";
-  };
-  updateCorner();
-  flashCorner();
+  // The floating "Nib · N" corner chip was removed in v1.0.5 — the
+  // menubar tray icon is the only ambient surface. flashCorner /
+  // updateCorner are stubs so existing call sites keep working.
+  const flashCorner = () => {};
+  const updateCorner = () => {};
 
   // ---- helpers --------------------------------------------------------
   const escapeHtml = (s) =>
@@ -146,7 +132,7 @@
     Eggcorn: "A similar-sounding word or phrase has crept in that almost makes sense ('egg corn' for 'acorn'). The suggestion restores the original idiom.",
     Malapropism: "A similar-sounding word with a different meaning slipped in — like 'eluded to' instead of 'alluded to'. The suggested word is the intended one.",
     Nonstandard: "This form is recognized but falls outside standard written English. Use the suggestion when you want the conventional spelling or phrasing.",
-    Regionalism: "This spelling or phrasing is standard in some regions but not others (e.g. 'colour' vs. 'color'). The suggestion matches the dialect Quill is set to.",
+    Regionalism: "This spelling or phrasing is standard in some regions but not others (e.g. 'colour' vs. 'color'). The suggestion matches the dialect Nib is set to.",
     Formatting: "Whitespace, quotes, dashes, or other formatting characters don't match prose conventions — like straight quotes where curly quotes are preferred.",
     WrongQuotes: "Smart quotes (curly) are preferred over straight quotes in prose. Most word processors auto-substitute them; the suggestion does the same.",
     Miscellaneous: "Harper flagged this against a rule that doesn't fit the other categories. The suggestion is the rule's recommended replacement.",
@@ -518,7 +504,7 @@
       fallbackEl.classList.remove("visible");
       return;
     }
-    fbHeader.textContent = `Quill — ${currentLints.length}`;
+    fbHeader.textContent = `Nib — ${currentLints.length}`;
     fbList.innerHTML = currentLints.map((l, i) => {
       const slice = [...currentText].slice(l.start, l.end).join("");
       const suggs = (l.suggestions || []).map((s, j) => renderChip(s, i, j)).join("");

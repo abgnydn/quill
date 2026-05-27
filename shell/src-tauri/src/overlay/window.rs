@@ -11,7 +11,7 @@ use tauri::{AppHandle, WebviewUrl, WebviewWindowBuilder};
 /// positions a `<div>` border at the reported bounds.
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let win = WebviewWindowBuilder::new(app, "overlay", WebviewUrl::App("overlay.html".into()))
-        .title("Quill Overlay")
+        .title("Nib Overlay")
         .inner_size(4096.0, 3072.0)
         .position(0.0, 0.0)
         .decorations(false)
