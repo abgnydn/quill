@@ -26,20 +26,9 @@
         <button class="pop-why-toggle" id="pop-why-toggle" aria-expanded="false">Why?</button>
         <div class="pop-why-body" id="pop-why-body" hidden></div>
       </div>
-      <div class="pop-ai">
-        <span class="pop-ai-label">whole sentence</span>
-        <button class="ai-btn" id="ai-btn">
-          <span class="spinner" id="ai-btn-spinner" style="display:none"></span>
-          <span id="ai-btn-label">Rewrite with AI</span>
-        </button>
-      </div>
-      <div class="ai-out" id="ai-out">
-        <div id="ai-text"></div>
-        <div class="row">
-          <button class="sugg" id="ai-apply">✓ Apply</button>
-          <button class="sugg" id="ai-dismiss">Dismiss</button>
-        </div>
-      </div>
+      <!-- AI rewrite was moved out of the hover popover in v1.1.2.
+           Select text → click the blue ↓ trigger → use the dedicated
+           rewrite panel. The hover popover is purely word-level now. -->
     </div>
 
     <!-- #corner removed: the floating chip cluttered the desktop. The

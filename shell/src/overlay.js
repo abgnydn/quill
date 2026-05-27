@@ -21,6 +21,9 @@
   const popSuggs = $("pop-suggs");
   const popWhyToggle = $("pop-why-toggle");
   const popWhyBody = $("pop-why-body");
+  // AI rewrite UI moved out of the hover popover in v1.1.2 — selection
+  // trigger + dedicated rewrite panel now handle that flow. These DOM
+  // queries return null (no-op handlers below); kept for symmetry.
   const aiBtn = $("ai-btn");
   const aiBtnLabel = $("ai-btn-label");
   const aiBtnSpinner = $("ai-btn-spinner");
@@ -220,7 +223,7 @@
   // ---- popover --------------------------------------------------------
   const hidePopover = () => {
     popover.classList.remove("visible");
-    aiOut.classList.remove("visible");
+    if (aiOut) aiOut.classList.remove("visible");
     activeLintIdx = -1;
     requestAnimationFrame(pushHotRegions);
   };
@@ -241,7 +244,7 @@
     popSuggs.innerHTML = (lint.suggestions || [])
       .map((s, j) => renderChip(s, lintIdx, j))
       .join("");
-    aiOut.classList.remove("visible");
+    if (aiOut) aiOut.classList.remove("visible");
 
     // Why? — collapsed by default; click expands an explanation block.
     popWhyBody.textContent = whyFor(lint);
@@ -319,15 +322,13 @@
     });
   };
 
-  // Hide delay is context-aware:
-  //   3000ms — when the AI rewrite panel is open (need time to read +
-  //            compare the streamed result, click Apply or Dismiss).
-  //   600ms  — normal hover dismissal (any longer feels clingy).
-  // mouseenter cancels the timer entirely so hovering keeps it open.
+  // Hide delay: 300ms. mouseenter on the popover cancels the timer
+  // entirely so hovering it keeps it open until explicit dismissal.
+  // (The AI rewrite has its own panel now — no more 3000ms "give them
+  // time to read the streaming output" case here.)
   const scheduleHide = () => {
     clearTimeout(hoverHideTimer);
-    const aiVisible = aiOut.classList.contains("visible");
-    hoverHideTimer = setTimeout(hidePopover, aiVisible ? 3000 : 600);
+    hoverHideTimer = setTimeout(hidePopover, 300);
   };
   const cancelHide = () => clearTimeout(hoverHideTimer);
 
@@ -493,7 +494,7 @@
   // to write the replacement back over the same character range.
   let lastRewriteRange = null;
 
-  aiBtn.addEventListener("click", async () => {
+  if (aiBtn) aiBtn.addEventListener("click", async () => {
     ping("ai-rewrite-click", currentLints.length,
       `text_len=${currentText.length} activeLint=${activeLintIdx}`);
     if (!currentText) {
@@ -569,7 +570,7 @@
       ping("ai-rewrite-done", lastRewrite.length, "");
     }
   });
-  aiApply.addEventListener("click", async () => {
+  if (aiApply) aiApply.addEventListener("click", async () => {
     if (!lastRewrite || !currentText || !lastRewriteRange) return;
     const { start, end } = lastRewriteRange;
     const chars = [...currentText];
@@ -590,8 +591,8 @@
       ping("rewrite-apply-err", 0, String(err));
     }
   });
-  aiDismiss.addEventListener("click", () => {
-    aiOut.classList.remove("visible");
+  if (aiDismiss) aiDismiss.addEventListener("click", () => {
+    if (aiOut) aiOut.classList.remove("visible");
     requestAnimationFrame(pushHotRegions);
   });
 
@@ -682,7 +683,7 @@
       `lints=${currentLints.length} inline=${inline} text_len=${currentText.length}`);
 
     if (lastRewrite && currentText && lastRewrite !== currentText) {
-      aiOut.classList.remove("visible");
+      if (aiOut) aiOut.classList.remove("visible");
       lastRewrite = "";
     }
     if (!currentFieldBounds) fallbackEl.classList.remove("visible");
