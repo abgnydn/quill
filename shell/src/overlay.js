@@ -239,12 +239,15 @@
       popBulk.hidden = true;
     }
 
-    // Position bottom-right of the word (Grammarly-style). The popover
-    // sits diagonally off the word's bottom-right corner so it never
-    // covers the text you're still reading. Falls back to other corners
-    // when the preferred position would go off-screen.
+    // Position bottom-right of the word (Grammarly-style).
+    //
+    // CRITICAL: the overlay window is 4096×3072 (covers every display),
+    // so window.innerWidth/Height return those huge numbers — useless for
+    // clamping to the user's actual screen. screen.availWidth/Height give
+    // the real visible bounds (screen size minus menubar/dock).
     const r = lint.rect;
-    const W = window.innerWidth, H = window.innerHeight;
+    const W = screen.availWidth;
+    const H = screen.availHeight;
     const pw = 320 + 24;
     const gap = 6;
 
@@ -255,26 +258,39 @@
       x = Math.max(8, Math.min(r.x + r.w - pw, W - pw - 8));
     }
     x = Math.max(8, Math.min(x, W - pw - 8));
+
+    // Cap popover max-height to remaining viewport space (below word OR
+    // above word, whichever flips end up using). max-height takes effect
+    // BEFORE measurement so we don't render a 1000px popover then shrink.
+    const spaceBelow = H - (r.y + r.h) - 16;
+    const spaceAbove = r.y - 16;
+    const maxH = Math.max(180, Math.max(spaceBelow, spaceAbove));
+    popover.style.maxHeight = maxH + "px";
+
     popover.style.left = x + "px";
     popover.style.top = y + "px";
     popover.classList.add("visible");
 
-    // After the popover renders, measure its real height (it can be tall —
-    // long Why? text, multi-paragraph suggestions, AI rewrite output) and
-    // clamp / flip so it never extends off the viewport.
+    // After render, measure REAL height. If it overflows below the
+    // visible screen, flip above the word. Last-resort clamp + scroll.
     requestAnimationFrame(() => {
       const pb = popover.getBoundingClientRect();
       const realH = pb.height || 200;
-      // If it extends past bottom: try flipping above the word.
       if (y + realH > H - 8) {
+        // Try flipping above the word.
         const aboveY = r.y - realH - gap;
         if (aboveY >= 8) {
           y = aboveY;
         } else {
-          // Neither below nor above fully fits — keep it below but clamp
-          // top to give as much vertical room as possible. CSS max-height +
-          // overflow-y on #popover handles the internal scroll.
-          y = Math.max(8, H - realH - 8);
+          // Neither below nor above fits the full popover. Pick the side
+          // with more room and let the CSS overflow-y scroll the rest.
+          if (spaceBelow >= spaceAbove) {
+            y = r.y + r.h + gap;
+            popover.style.maxHeight = (spaceBelow - 8) + "px";
+          } else {
+            y = 8;
+            popover.style.maxHeight = (spaceAbove - 8) + "px";
+          }
         }
         popover.style.top = y + "px";
       }
