@@ -144,6 +144,84 @@ html, body {
 }
 .sugg.applied::after { content: " ✓"; font-weight: 700; }
 
+/* === Bulk toolbar (Accept all / Dismiss all) ============================ */
+.pop-bulk {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: -2px 0 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.pop-bulk[hidden] { display: none; }
+.pop-bulk-btn {
+  background: var(--bg-chip);
+  color: var(--fg);
+  border: none;
+  padding: 3.5px 9px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, transform 0.1s, filter 0.1s;
+}
+.pop-bulk-btn:hover { transform: translateY(-1px); }
+.pop-bulk-btn:active { transform: translateY(0); }
+.pop-bulk-btn:disabled { opacity: 0.6; cursor: progress; }
+.pop-bulk-btn.accept {
+  background: var(--bg-chip-h);
+  color: #0f1115;
+}
+.pop-bulk-btn.accept:hover { filter: brightness(1.08); }
+.pop-bulk-btn.dismiss {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg-dim);
+}
+.pop-bulk-btn.dismiss:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+}
+.pop-bulk-count {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--fg-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+/* === "Why?" expansion =================================================== */
+.pop-why-wrap {
+  margin-top: 7px;
+}
+.pop-why-toggle {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--fg-mute);
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  text-decoration: underline dotted rgba(139, 147, 167, 0.5);
+  text-underline-offset: 2px;
+  transition: color 0.1s;
+}
+.pop-why-toggle:hover { color: var(--fg-dim); }
+.pop-why-toggle[aria-expanded="true"] { color: var(--fg-dim); }
+.pop-why-body {
+  margin-top: 5px;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--fg-dim);
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid rgba(124, 156, 255, 0.35);
+  border-radius: 4px;
+}
+.pop-why-body[hidden] { display: none; }
+
 .pop-ai {
   margin-top: 9px;
   border-top: 1px solid rgba(255, 255, 255, 0.06);

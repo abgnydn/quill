@@ -13,9 +13,15 @@
   const fbHeader = $("fb-header");
   const fbList = $("fb-list");
   const popover = $("popover");
+  const popBulk = $("pop-bulk");
+  const popBulkAccept = $("pop-bulk-accept");
+  const popBulkDismiss = $("pop-bulk-dismiss");
+  const popBulkCount = $("pop-bulk-count");
   const popKind = $("pop-kind");
   const popMsg = $("pop-msg");
   const popSuggs = $("pop-suggs");
+  const popWhyToggle = $("pop-why-toggle");
+  const popWhyBody = $("pop-why-body");
   const aiBtn = $("ai-btn");
   const aiBtnLabel = $("ai-btn-label");
   const aiBtnSpinner = $("ai-btn-spinner");
@@ -119,6 +125,37 @@
     return "misc";
   };
 
+  // Static "Why?" lookup, keyed by Harper's `LintKind` Debug name (see
+  // shell/src-tauri/src/wire.rs → `format!("{:?}", l.lint_kind)`). When a
+  // kind isn't covered, the popover falls back to the lint's own `message`.
+  const WHY_MAP = {
+    Agreement: "Subjects and verbs must agree in number. 'I has' uses the wrong verb form for the singular 'I' — singular subjects take 'have'/'is', plural subjects take 'have'/'are'.",
+    Spelling: "This word isn't in the dictionary or contains a typo. Dictionary words read as more credible and avoid distracting your reader.",
+    Typo: "Your brain knew the right word but your fingers slipped — like 'can be seem' instead of 'can be seen'. The suggested form is the intended one.",
+    Capitalization: "Proper nouns, sentence starts, and 'I' need capital letters. Inconsistent casing makes prose look careless.",
+    Punctuation: "Punctuation guides the reader's pacing — missing or extra marks can change meaning or stall the eye. Hyphens also matter for compound adjectives (e.g. 'face-first' before a noun).",
+    Grammar: "This construction breaks a syntactic rule (tense, case, agreement, word order, etc.). The suggested edit restores standard English.",
+    Style: "Both forms are technically correct, but one is preferred for clarity or formal writing — e.g. expanding 'min' to 'minimum' in a formal context.",
+    Redundancy: "Words that repeat meaning already expressed weaken your prose. 'Free gift' and 'basic fundamentals' say the same thing twice.",
+    Repetition: "The same word or phrase appears twice in a row, almost always by accident. Removing the duplicate usually fixes it.",
+    WordChoice: "A different word fits the context better — sharper meaning, fewer connotations, or more natural collocation.",
+    Usage: "Standard English prefers a particular collocation here (e.g. 'by accident' vs. 'on accident'). The suggestion matches the conventional form.",
+    Enhancement: "Not an error, but a tightening — this edit makes the sentence clearer or more impactful without changing its meaning.",
+    Readability: "This sentence is harder to parse than it needs to be — shorter clauses, plainer words, or active voice usually help.",
+    BoundaryError: "Words are joined or split at the wrong boundaries — like 'each and everyone' for 'each and every one'. The suggestion separates or joins them correctly.",
+    Eggcorn: "A similar-sounding word or phrase has crept in that almost makes sense ('egg corn' for 'acorn'). The suggestion restores the original idiom.",
+    Malapropism: "A similar-sounding word with a different meaning slipped in — like 'eluded to' instead of 'alluded to'. The suggested word is the intended one.",
+    Nonstandard: "This form is recognized but falls outside standard written English. Use the suggestion when you want the conventional spelling or phrasing.",
+    Regionalism: "This spelling or phrasing is standard in some regions but not others (e.g. 'colour' vs. 'color'). The suggestion matches the dialect Quill is set to.",
+    Formatting: "Whitespace, quotes, dashes, or other formatting characters don't match prose conventions — like straight quotes where curly quotes are preferred.",
+    WrongQuotes: "Smart quotes (curly) are preferred over straight quotes in prose. Most word processors auto-substitute them; the suggestion does the same.",
+    Miscellaneous: "Harper flagged this against a rule that doesn't fit the other categories. The suggestion is the rule's recommended replacement.",
+  };
+  const whyFor = (lint) => {
+    if (!lint) return "";
+    return WHY_MAP[lint.kind] || lint.message || "";
+  };
+
   const renderChip = (s, lintIdx, suggIdx) => {
     const label = s.kind === "remove" ? "⌫ remove" : escapeHtml(s.text || "");
     const removeClass = s.kind === "remove" ? " remove" : "";
@@ -181,6 +218,23 @@
       .map((s, j) => renderChip(s, lintIdx, j))
       .join("");
     aiOut.classList.remove("visible");
+
+    // Why? — collapsed by default; click expands an explanation block.
+    popWhyBody.textContent = whyFor(lint);
+    popWhyBody.hidden = true;
+    popWhyToggle.setAttribute("aria-expanded", "false");
+    popWhyToggle.textContent = "Why?";
+
+    // Bulk toolbar — only useful when there are 2+ lints in the field.
+    const n = currentLints.length;
+    if (n >= 2) {
+      popBulk.hidden = false;
+      popBulkCount.textContent = `${n} issues`;
+      popBulkAccept.disabled = false;
+      popBulkAccept.textContent = "Accept all";
+    } else {
+      popBulk.hidden = true;
+    }
 
     // Position above the underline; flip below if not enough room.
     const r = lint.rect;
@@ -250,6 +304,73 @@
     const t = e.target;
     if (!t || !t.classList.contains("sugg")) return;
     applySuggestion(parseInt(t.dataset.lint, 10), parseInt(t.dataset.sugg, 10), t);
+  });
+
+  // ---- "Why?" expansion -----------------------------------------------
+  popWhyToggle.addEventListener("click", () => {
+    const open = !popWhyBody.hidden;
+    popWhyBody.hidden = open;
+    popWhyToggle.setAttribute("aria-expanded", open ? "false" : "true");
+    popWhyToggle.textContent = open ? "Why?" : "Why? ▾";
+    // The popover changed height — refresh hot regions so the cursor
+    // arbiter doesn't drop us before the user clicks Apply.
+    requestAnimationFrame(pushHotRegions);
+  });
+
+  // ---- bulk Accept all / Dismiss all ----------------------------------
+  // Apply the first suggestion of every lint that has one. Lints share a
+  // single text buffer, so earlier edits shift later character offsets —
+  // we apply in REVERSE start order to keep the remaining offsets valid.
+  // Snapshot the (lint, sugg) pairs up-front: each AXUI write fires a
+  // focus-update that rewrites `currentLints` mid-loop, so we can't trust
+  // currentLints[idx] later — we need to capture the offsets eagerly.
+  popBulkAccept.addEventListener("click", async () => {
+    if (popBulkAccept.disabled) return;
+    const sourceText = currentText;
+    const snapshots = currentLints
+      .filter((l) => l && l.suggestions && l.suggestions.length > 0)
+      .map((l) => ({ lint: l, sugg: l.suggestions[0] }))
+      .sort((a, b) => b.lint.start - a.lint.start);
+    if (!snapshots.length) {
+      hidePopover();
+      return;
+    }
+    popBulkAccept.disabled = true;
+    popBulkAccept.textContent = `Applying 0/${snapshots.length}…`;
+    let ok = 0;
+    let runningText = sourceText;
+    for (let k = 0; k < snapshots.length; k++) {
+      const { lint, sugg } = snapshots[k];
+      let start = lint.start, end = lint.end, replacement = sugg.text || "";
+      if (sugg.kind === "remove") replacement = "";
+      else if (sugg.kind === "insert_after") { start = lint.end; end = lint.end; }
+      const chars = [...runningText];
+      const applied_text =
+        chars.slice(0, start).join("") + replacement + chars.slice(end).join("");
+      try {
+        await invoke("apply_suggestion", {
+          start, end, replacement,
+          context: {
+            kind: "apply",
+            source_text: runningText,
+            applied_text,
+            lint_kind: lint.kind,
+            lint_message: lint.message,
+          },
+        });
+        runningText = applied_text;
+        ok++;
+      } catch (err) {
+        ping("bulk-apply-err", k, String(err));
+      }
+      popBulkAccept.textContent = `Applying ${k + 1}/${snapshots.length}…`;
+    }
+    ping("bulk-apply-done", ok, `total=${snapshots.length}`);
+    setTimeout(hidePopover, 200);
+  });
+  popBulkDismiss.addEventListener("click", () => {
+    ping("bulk-dismiss", currentLints.length);
+    hidePopover();
   });
 
   // ---- AI rewrite (streamed) -----------------------------------------

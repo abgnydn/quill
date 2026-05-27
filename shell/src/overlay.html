@@ -14,9 +14,18 @@
     </div>
 
     <div id="popover" role="dialog" aria-label="Quill suggestion">
+      <div class="pop-bulk" id="pop-bulk" hidden>
+        <button class="pop-bulk-btn accept" id="pop-bulk-accept" title="Apply the first suggestion of every lint">Accept all</button>
+        <button class="pop-bulk-btn dismiss" id="pop-bulk-dismiss" title="Close this popover">Dismiss all</button>
+        <span class="pop-bulk-count" id="pop-bulk-count"></span>
+      </div>
       <div class="pop-kind" id="pop-kind"></div>
       <div class="pop-msg" id="pop-msg"></div>
       <div class="pop-suggs" id="pop-suggs"></div>
+      <div class="pop-why-wrap" id="pop-why-wrap">
+        <button class="pop-why-toggle" id="pop-why-toggle" aria-expanded="false">Why?</button>
+        <div class="pop-why-body" id="pop-why-body" hidden></div>
+      </div>
       <div class="pop-ai">
         <span class="pop-ai-label">whole sentence</span>
         <button class="ai-btn" id="ai-btn">
