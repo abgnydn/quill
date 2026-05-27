@@ -245,37 +245,52 @@
     // when the preferred position would go off-screen.
     const r = lint.rect;
     const W = window.innerWidth, H = window.innerHeight;
-    const pw = 280 + 24, ph = 170;
+    const pw = 320 + 24;
     const gap = 6;
 
-    // Preferred: bottom-right of word.
+    // Provisional position, refined after we can measure actual height.
     let x = r.x + r.w + gap;
     let y = r.y + r.h + gap;
-
-    // Off-right? Pull left so popover's right edge ≤ word's right edge.
     if (x + pw > W - 8) {
       x = Math.max(8, Math.min(r.x + r.w - pw, W - pw - 8));
     }
-    // Off-bottom? Flip to top-right of the word.
-    if (y + ph > H - 8) {
-      y = Math.max(8, r.y - ph - gap);
-    }
-    // Final safety clamp.
     x = Math.max(8, Math.min(x, W - pw - 8));
-    y = Math.max(8, Math.min(y, H - ph - 8));
     popover.style.left = x + "px";
     popover.style.top = y + "px";
     popover.classList.add("visible");
-    requestAnimationFrame(pushHotRegions);
+
+    // After the popover renders, measure its real height (it can be tall —
+    // long Why? text, multi-paragraph suggestions, AI rewrite output) and
+    // clamp / flip so it never extends off the viewport.
+    requestAnimationFrame(() => {
+      const pb = popover.getBoundingClientRect();
+      const realH = pb.height || 200;
+      // If it extends past bottom: try flipping above the word.
+      if (y + realH > H - 8) {
+        const aboveY = r.y - realH - gap;
+        if (aboveY >= 8) {
+          y = aboveY;
+        } else {
+          // Neither below nor above fully fits — keep it below but clamp
+          // top to give as much vertical room as possible. CSS max-height +
+          // overflow-y on #popover handles the internal scroll.
+          y = Math.max(8, H - realH - 8);
+        }
+        popover.style.top = y + "px";
+      }
+      pushHotRegions();
+    });
   };
 
-  // Hide delay was 220ms — too tight for slow cursor users + gave the
-  // mouse arbiter time to dismiss before the cursor finished traveling
-  // between the underline and popover. 600ms is the standard "tooltip
-  // intent" delay in modern UI libs.
+  // Hide delay: 3000ms (was 600ms). Users complained "I just move
+  // cursor and it's gone" — 600ms was barely enough to slide between
+  // underline and popover, definitely not enough to read + decide.
+  // Any interaction with the popover (click on Why?, on a suggestion,
+  // mouseenter) cancels the timer entirely via cancelHide() so it stays
+  // until the user makes an explicit choice or moves on.
   const scheduleHide = () => {
     clearTimeout(hoverHideTimer);
-    hoverHideTimer = setTimeout(hidePopover, 600);
+    hoverHideTimer = setTimeout(hidePopover, 3000);
   };
   const cancelHide = () => clearTimeout(hoverHideTimer);
 
