@@ -34,6 +34,33 @@ LOG="/tmp/nib.log"
 QVAC_CACHE="$HOME/.cache/qvac/qvac-fabric-llm.cpp"
 QVAC_RESOURCES="$REPO_ROOT/shell/src-tauri/resources/qvac"
 
+# One-version-only policy: every build, sweep Nib.app / Nib_*.dmg from
+# everywhere they tend to accumulate so the user only ever sees the
+# currently-installed copy in Spotlight / Finder. Conservative — never
+# touches /Applications or user docs, only build artifacts + /tmp + the
+# residual /Volumes mounts left by testing previous .dmgs.
+cleanup_old_versions() {
+  # 1. Eject any /Volumes/Nib* — testers leave these mounted.
+  for v in /Volumes/Nib*; do
+    [[ -d "$v" ]] || continue
+    diskutil eject "$v" 2>&1 | head -1
+  done
+  # 2. Remove stale staging DMGs in /tmp (we always rebuild a fresh one).
+  rm -f /tmp/Nib_*.dmg /tmp/Quill_*.dmg 2>/dev/null
+  # 3. Remove the *previous* build artifact in target/<profile>/bundle/.
+  rm -rf "$REPO_ROOT/shell/src-tauri/target/release-dev/bundle/macos/Nib.app" \
+         "$REPO_ROOT/shell/src-tauri/target/release/bundle/macos/Nib.app" \
+         "$REPO_ROOT/shell/src-tauri/target/release-dev/bundle/dmg" \
+         "$REPO_ROOT/shell/src-tauri/target/release/bundle/dmg" 2>/dev/null
+  # 4. Sweep any leftover Quill.app from the old name in ~/Applications.
+  rm -rf "$HOME/Applications/Quill.app" 2>/dev/null
+  # 5. Drop old WebKit caches from the previous bundle ID.
+  rm -rf "$HOME/Library/WebKit/io.quill.app" 2>/dev/null
+  # 6. Spotlight-skip marker — keep future target/ rebuilds out of Cmd+Space.
+  mkdir -p "$REPO_ROOT/shell/src-tauri/target"
+  touch "$REPO_ROOT/shell/src-tauri/target/.metadata_never_index"
+}
+
 # Build QVAC (BitNet + on-device LoRA training engine) once, cache the
 # binaries under ~/.cache/qvac/, then copy them into the Tauri resources
 # directory so they get bundled inside Nib.app/Contents/Resources/qvac/.
@@ -102,12 +129,16 @@ if [[ "$BUILD" -eq 1 && "$FAST" -eq 1 ]]; then
 fi
 
 if [[ "$BUILD" -eq 1 ]]; then
+  echo "[quill] cleaning up old versions before build…"
+  cleanup_old_versions
   prepare_qvac
   echo "[quill] building release with llm + overlay features (full opt, ~15 min)…"
   ( cd "$REPO_ROOT/shell/src-tauri" && cargo tauri build --features llm,overlay )
 fi
 
 if [[ "$FAST" -eq 1 ]]; then
+  echo "[quill] cleaning up old versions before build…"
+  cleanup_old_versions
   prepare_qvac
   echo "[quill] FAST build (profile=release-dev, no DMG, ~3 min)…"
   ( cd "$REPO_ROOT/shell/src-tauri" && \
@@ -143,6 +174,12 @@ echo "[quill] launching with stderr → $LOG"
 QUILL_PID=$!
 sleep 4
 echo "[quill] pid=$QUILL_PID  log=$LOG"
+
+# Final sweep after install — drop the freshly-built artifact in target/
+# now that it's been copied into ~/Applications. Spotlight only sees the
+# canonical install path.
+rm -rf "$REPO_ROOT/shell/src-tauri/target/release-dev/bundle/macos/Nib.app" \
+       "$REPO_ROOT/shell/src-tauri/target/release/bundle/macos/Nib.app" 2>/dev/null
 
 if [[ "$TAIL" -eq 1 ]]; then
   echo "[quill] tailing $LOG (Ctrl-C to stop)…"
