@@ -103,6 +103,15 @@
       <div id="settings-toast" class="settings-toast hidden"></div>
 
       <fieldset class="settings-panel">
+        <legend>Model</legend>
+        <p class="settings-hint">
+          Which LLM Nib loads for grammar + rewrites. Switching requires
+          a relaunch. Larger models are more faithful but use more RAM.
+        </p>
+        <div id="model-list" class="model-list"></div>
+      </fieldset>
+
+      <fieldset class="settings-panel">
         <legend>Pause Nib</legend>
         <div class="pause-row">
           <label class="toggle">

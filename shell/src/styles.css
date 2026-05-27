@@ -453,6 +453,76 @@ aside {
   color: var(--fg-dim);
   padding: 0 6px;
 }
+.settings-hint {
+  font-size: 12px;
+  color: var(--fg-dim);
+  margin: 0 0 10px;
+  line-height: 1.45;
+}
+
+/* === Model picker ====================================================== */
+.model-list { display: flex; flex-direction: column; gap: 8px; }
+.model-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid #232735;
+  border-radius: 6px;
+  background: var(--panel-2, rgba(255,255,255,0.02));
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.model-row:hover { border-color: #2f3548; background: rgba(255,255,255,0.04); }
+.model-row.selected {
+  border-color: var(--accent, #ff6b4a);
+  background: rgba(255,107,74,0.08);
+}
+.model-row input[type="radio"] {
+  margin-top: 3px; accent-color: var(--accent, #ff6b4a);
+}
+.model-info { flex: 1; min-width: 0; }
+.model-name {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font-size: 14px; font-weight: 500; margin-bottom: 4px;
+}
+.model-name .pill {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: rgba(255,255,255,0.08);
+  color: var(--fg-dim);
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+.model-name .pill.bundled { background: rgba(52,211,153,0.15); color: #4fd6a8; }
+.model-name .pill.downloaded { background: rgba(58,122,254,0.18); color: #6b9eff; }
+.model-blurb {
+  font-size: 12px; color: var(--fg-dim); line-height: 1.45;
+}
+.model-action {
+  font-size: 12px; font-weight: 500;
+  padding: 5px 12px; border-radius: 5px;
+  border: 1px solid var(--accent, #ff6b4a);
+  background: transparent; color: var(--accent, #ff6b4a);
+  cursor: pointer; align-self: flex-start;
+  margin-top: 6px;
+  transition: all 0.12s ease;
+}
+.model-action:hover { background: var(--accent, #ff6b4a); color: white; }
+.model-action:disabled { opacity: 0.6; cursor: wait; }
+.model-progress {
+  margin-top: 6px;
+  font-size: 11px; color: var(--fg-dim);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.model-progress-bar {
+  height: 4px; background: rgba(255,255,255,0.08);
+  border-radius: 2px; overflow: hidden; margin-top: 4px;
+}
+.model-progress-bar > div {
+  height: 100%; background: var(--accent, #ff6b4a);
+  transition: width 0.3s ease;
+}
 .settings-empty {
   color: var(--fg-dim);
   font-size: 12px;

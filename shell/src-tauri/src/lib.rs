@@ -12,6 +12,7 @@ use tauri::Manager;
 pub mod commands;
 pub mod config;
 pub mod journal;
+pub mod models;
 pub mod qvac;
 pub mod state;
 pub mod training;
@@ -158,6 +159,10 @@ pub fn run() {
                 }
             };
             app.manage(config.clone());
+
+            // Model download tracker — drives the model picker UI's
+            // progress bar via model_download_status polls.
+            app.manage(std::sync::Arc::new(models::DownloadTracker::new()));
 
             // ---- Menubar tray ------------------------------------------
             // Quill runs as an LSUIElement — no dock icon, no main app
@@ -387,6 +392,11 @@ pub fn run() {
             commands::pause_for_minutes,
             commands::app_override_set,
             commands::app_override_remove,
+            commands::model_list,
+            commands::model_get_selected,
+            commands::model_set_selected,
+            commands::model_download,
+            commands::model_download_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

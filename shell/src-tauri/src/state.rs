@@ -129,19 +129,43 @@ impl RewriteState {
     }
 }
 
-/// Resolve the model path: prefer QUILL_MODEL env var (dev override), fall
-/// back to the bundled `resources/lfm2.5-350m-q4_k_m.gguf` shipped inside the .app.
+/// Resolve the model path. Priority:
+///   1. `QUILL_MODEL` env var (dev override — exact path).
+///   2. `~/Library/Application Support/Quill/config.json`'s
+///      `selected_model` field, resolved via the `models::REGISTRY`.
+///      For bundled models → app resource; for downloaded models →
+///      `~/Library/Application Support/Quill/models/<filename>.gguf`.
+///   3. Fall back to the bundled default if the selected model file
+///      doesn't exist on disk (e.g. user selected a model but the
+///      download was deleted).
 pub fn resolve_model_path(app: &tauri::App) -> Option<std::path::PathBuf> {
     if let Ok(env) = std::env::var("QUILL_MODEL") {
         return Some(env.into());
     }
-    use tauri::Manager;
-    app.path()
-        .resolve(
-            "resources/lfm2.5-350m-q4_k_m.gguf",
-            tauri::path::BaseDirectory::Resource,
-        )
-        .ok()
+
+    // Read selected_model directly from disk — we don't have ConfigStore
+    // wired up at this point in setup.
+    let selected_id = read_selected_model_id().unwrap_or_else(|| "lfm2.5-350m".to_string());
+    if let Some(p) = crate::models::resolve_path(app, &selected_id) {
+        if p.exists() {
+            eprintln!("[nib] resolved selected model '{selected_id}' → {}", p.display());
+            return Some(p);
+        }
+        eprintln!("[nib] selected model '{selected_id}' missing on disk — falling back");
+    }
+    // Fallback: bundled default.
+    crate::models::resolve_path(app, "lfm2.5-350m")
+}
+
+/// Peek at config.json's selected_model without spinning up the full
+/// ConfigStore. Returns None if the file/key doesn't exist.
+fn read_selected_model_id() -> Option<String> {
+    let home = std::env::var_os("HOME")?;
+    let path = std::path::PathBuf::from(home)
+        .join("Library/Application Support/Quill/config.json");
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    v.get("selected_model").and_then(|s| s.as_str()).map(|s| s.to_string())
 }
 
 /// Where Quill looks for an optional personal LoRA adapter on startup.

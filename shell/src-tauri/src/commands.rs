@@ -432,6 +432,59 @@ pub fn app_override_remove(
         .map_err(|e| e.to_string())
 }
 
+// ─────────── Model picker ───────────
+
+#[tauri::command]
+pub fn model_list() -> Vec<crate::models::ModelInfo> {
+    crate::models::REGISTRY.iter().cloned().collect()
+}
+
+#[tauri::command]
+pub fn model_get_selected(
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> String {
+    config.snapshot().selected_model
+}
+
+#[tauri::command]
+pub fn model_set_selected(
+    id: String,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<String, String> {
+    // Verify the id exists in the registry — otherwise a typo would
+    // brick the next startup. lookup() returns default for unknown ids
+    // so we explicitly check existence here.
+    let known = crate::models::REGISTRY.iter().any(|m| m.id == id);
+    if !known {
+        return Err(format!("unknown model id: {id}"));
+    }
+    config
+        .update(|c| c.selected_model = id.clone())
+        .map_err(|e| e.to_string())?;
+    Ok(id)
+}
+
+#[tauri::command]
+pub fn model_download(
+    id: String,
+    tracker: State<'_, Arc<crate::models::DownloadTracker>>,
+) -> Result<crate::models::DownloadStatus, String> {
+    // Refuse to start a second download while one is running.
+    let current = tracker.snapshot();
+    if current.state == crate::models::DownloadState::Running {
+        return Err(format!("download already running: {}", current.model_id));
+    }
+    crate::models::spawn_download(id.clone(), tracker.inner().clone(), None);
+    Ok(tracker.snapshot())
+}
+
+#[tauri::command]
+pub fn model_download_status(
+    tracker: State<'_, Arc<crate::models::DownloadTracker>>,
+) -> crate::models::DownloadStatus {
+    tracker.snapshot()
+}
+
 #[tauri::command]
 pub fn rewrite(
     text: &str,

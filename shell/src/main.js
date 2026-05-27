@@ -804,12 +804,124 @@ async function refreshSettings() {
   }
 }
 
+// ───────── Model picker ─────────
+async function refreshModelList() {
+  try {
+    const models = await invoke("model_list");
+    const selectedId = await invoke("model_get_selected");
+    const dl = await invoke("model_download_status");
+    renderModelList(models, selectedId, dl);
+  } catch (e) {
+    console.error("model list refresh failed:", e);
+  }
+}
+
+function renderModelList(models, selectedId, dlStatus) {
+  const list = document.getElementById("model-list");
+  if (!list) return;
+  list.innerHTML = "";
+  for (const m of models) {
+    const downloaded = m.bundled || (
+      dlStatus.model_id === m.id && dlStatus.state === "done"
+    );
+    const row = document.createElement("label");
+    row.className = "model-row" + (m.id === selectedId ? " selected" : "");
+
+    const radio = document.createElement("input");
+    radio.type = "radio";
+    radio.name = "model";
+    radio.value = m.id;
+    radio.checked = (m.id === selectedId);
+    radio.addEventListener("change", async () => {
+      try {
+        await invoke("model_set_selected", { id: m.id });
+        showSettingsToast(`Selected ${m.display_name}. Quit and relaunch Nib to load it.`);
+        refreshModelList();
+      } catch (e) {
+        showSettingsToast(`Failed: ${e}`, true);
+      }
+    });
+    row.appendChild(radio);
+
+    const info = document.createElement("div");
+    info.className = "model-info";
+
+    const name = document.createElement("div");
+    name.className = "model-name";
+    name.innerHTML =
+      `<span>${escHtml(m.display_name)}</span>` +
+      `<span class="pill">${escHtml(m.params)}</span>` +
+      `<span class="pill">${m.size_mb} MB</span>` +
+      (m.bundled
+        ? '<span class="pill bundled">bundled</span>'
+        : (downloaded ? '<span class="pill downloaded">downloaded</span>' : ''));
+    info.appendChild(name);
+
+    const blurb = document.createElement("div");
+    blurb.className = "model-blurb";
+    blurb.textContent = m.blurb;
+    info.appendChild(blurb);
+
+    // Download button for non-bundled, not-yet-downloaded models.
+    const isDownloading =
+      dlStatus.model_id === m.id && dlStatus.state === "running";
+    if (!m.bundled && !downloaded && !isDownloading) {
+      const btn = document.createElement("button");
+      btn.className = "model-action";
+      btn.textContent = `↓ Download (${m.size_mb} MB)`;
+      btn.addEventListener("click", async (e) => {
+        e.preventDefault();
+        try {
+          await invoke("model_download", { id: m.id });
+          refreshModelList();
+        } catch (err) {
+          showSettingsToast(`Download failed: ${err}`, true);
+        }
+      });
+      info.appendChild(btn);
+    }
+    if (isDownloading) {
+      const pct = dlStatus.total_bytes > 0
+        ? Math.min(100, (dlStatus.bytes_done / dlStatus.total_bytes) * 100)
+        : 0;
+      const prog = document.createElement("div");
+      prog.className = "model-progress";
+      prog.innerHTML =
+        `Downloading… ${(dlStatus.bytes_done / 1024 / 1024).toFixed(1)} MB / ${m.size_mb} MB (${pct.toFixed(0)}%)` +
+        `<div class="model-progress-bar"><div style="width:${pct}%"></div></div>`;
+      info.appendChild(prog);
+    }
+    if (dlStatus.model_id === m.id && dlStatus.state === "failed") {
+      const err = document.createElement("div");
+      err.className = "model-progress";
+      err.style.color = "#ff7878";
+      err.textContent = `Download failed: ${dlStatus.error || "unknown error"}`;
+      info.appendChild(err);
+    }
+
+    row.appendChild(info);
+    list.appendChild(row);
+  }
+}
+
+function escHtml(s) {
+  return String(s)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 probeCapabilities();
 runCheck();
 refreshPersonal();
 refreshConfig();
 refreshDictionary();
 refreshSettings();
+refreshModelList();
 setInterval(refreshPersonal, 5000);
 setInterval(refreshConfig, 7000);
 setInterval(refreshSettings, 7000);
+// Faster cadence for the model list while a download is in flight so
+// the progress bar feels live.
+setInterval(refreshModelList, 1500);

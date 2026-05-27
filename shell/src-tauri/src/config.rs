@@ -54,6 +54,10 @@ pub struct Config {
     pub pause_until: Option<String>,
     /// Per-app override map keyed by bundle ID. Overrides [`engagement_policy`].
     pub app_overrides: HashMap<String, AppOverride>,
+    /// Selected LLM model id from `models::REGISTRY`. Default is the
+    /// bundled lightweight option; users opt into larger downloads via
+    /// the Settings panel.
+    pub selected_model: String,
 }
 
 impl Default for Config {
@@ -68,6 +72,7 @@ impl Default for Config {
             paused: false,
             pause_until: None,
             app_overrides: HashMap::new(),
+            selected_model: "lfm2.5-350m".to_string(),
         }
     }
 }
