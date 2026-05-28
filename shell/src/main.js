@@ -867,7 +867,7 @@ function renderModelList(models, dlStatus) {
     info.appendChild(blurb);
 
     // Download button only for non-bundled AND not-installed models.
-    // (Full installer ships LFM2.5-1.2B bundled — installed already.)
+    // (Full installer ships Nib-Qwen v2 bundled — installed already.)
     const isDownloading =
       dlStatus.model_id === m.id && dlStatus.state === "running";
     if (!installed && !isDownloading && m.url) {

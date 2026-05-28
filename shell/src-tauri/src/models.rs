@@ -48,15 +48,17 @@ pub const REGISTRY: &[ModelInfo] = &[
         filename: "lfm2.5-350m-q4_k_m.gguf",
     },
     ModelInfo {
-        id: "lfm2.5-1.2b-instruct",
-        display_name: "LFM2.5 1.2B Instruct",
-        params: "1.2B",
-        size_mb: 731,
-        blurb: "Premium. Higher fidelity rewrites — preserves facts \
-                much better. 731 MB download (one-time).",
+        id: "nib-qwen-v2",
+        display_name: "Nib-Qwen v2 (1.5B, faithful)",
+        params: "1.5B",
+        size_mb: 940,
+        blurb: "Premium. Qwen 2.5-1.5B fine-tuned by Nib on a faithful-\
+                rewrite dataset — preserves facts, numbers, and \
+                technical tokens. 70% pass on our internal eval (vs 34% \
+                for the 350M default). 940 MB download (one-time).",
         bundled: false,
-        url: Some("https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-Q4_K_M.gguf?download=true"),
-        filename: "lfm2.5-1.2b-instruct-q4_k_m.gguf",
+        url: Some("https://github.com/abgnydn/quill/releases/download/v2.0.0/nib-qwen-v2-q4_k_m.gguf"),
+        filename: "nib-qwen-v2-q4_k_m.gguf",
     },
 ];
 
@@ -68,7 +70,7 @@ pub fn lookup(id: &str) -> &'static ModelInfo {
 
 /// Resolve the on-disk path for a given model. Checks BOTH the bundle
 /// resources dir AND the downloaded-models dir — that way the Full
-/// installer (which ships LFM2.5-1.2B inside the .app) and the regular
+/// installer (which ships Nib-Qwen v2 inside the .app) and the regular
 /// installer (which expects users to download it) both work via the
 /// same code path. Bundle wins when present.
 ///
@@ -322,6 +324,6 @@ mod tests {
 
     #[test]
     fn lookup_finds_known_models() {
-        assert_eq!(lookup("lfm2.5-1.2b-instruct").id, "lfm2.5-1.2b-instruct");
+        assert_eq!(lookup("nib-qwen-v2").id, "nib-qwen-v2");
     }
 }

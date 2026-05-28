@@ -18,9 +18,10 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, LlamaLoraAdapter, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 
-/// LFM2.5 ChatML template — proper system + user separation.
-/// `<|startoftext|>` BOS is prepended by `AddBos::Always` at tokenize
-/// time, so we don't include it here.
+/// ChatML template — used by both LFM2.5-Instruct and Qwen 2.5-Instruct,
+/// with proper system + user role separation.
+/// BOS (`<|startoftext|>` for LFM2.5, none for Qwen) is added by
+/// `AddBos::Always` at tokenize time per the model's GGUF metadata.
 ///
 /// Why system vs user-only: when we crammed instruction + source into
 /// ONE user message ("You are a copy editor. ... source text") the
