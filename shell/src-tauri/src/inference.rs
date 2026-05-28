@@ -18,17 +18,23 @@ use llama_cpp_2::model::params::LlamaModelParams;
 use llama_cpp_2::model::{AddBos, LlamaLoraAdapter, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 
-/// LFM2.5 ChatML template. `<|startoftext|>` BOS is prepended by
-/// `AddBos::Always` at tokenize time, so we don't include it here.
+/// LFM2.5 ChatML template — proper system + user separation.
+/// `<|startoftext|>` BOS is prepended by `AddBos::Always` at tokenize
+/// time, so we don't include it here.
+///
+/// Why system vs user-only: when we crammed instruction + source into
+/// ONE user message ("You are a copy editor. ... source text") the
+/// 1.2B model started meta-narrating ("The user has requested a
+/// rewrite..."). With proper roles, the model understands the system
+/// message is its job and the user message is the data to operate on.
 const PROMPT_TEMPLATE: &str =
-    "<|im_start|>user\n{src}<|im_end|>\n<|im_start|>assistant\n";
+    "<|im_start|>system\n{instruction}<|im_end|>\n<|im_start|>user\n{source}<|im_end|>\n<|im_start|>assistant\n";
 
 /// Generation stop marker for LFM2.5 ChatML.
 const STOP_MARKER: &str = "<|im_end|>";
 
-/// Default editing instruction prepended to user text when no explicit
-/// instruction is supplied.
-const DEFAULT_INSTRUCTION: &str = "Fix the grammar and improve clarity:";
+/// Default system message when no explicit instruction is supplied.
+const DEFAULT_INSTRUCTION: &str = "You are a copy editor. Fix the grammar and improve clarity. Output only the corrected text, nothing else.";
 
 /// Send/Sync wrapper around the raw LoRA adapter handle.
 ///
@@ -122,8 +128,9 @@ impl RewriteEngine {
     where
         F: FnMut(&str),
     {
-        let src = format!("{} {}", instruction.unwrap_or(DEFAULT_INSTRUCTION), text);
-        let prompt = PROMPT_TEMPLATE.replace("{src}", &src);
+        let prompt = PROMPT_TEMPLATE
+            .replace("{instruction}", instruction.unwrap_or(DEFAULT_INSTRUCTION))
+            .replace("{source}", text);
 
         let ctx_params = LlamaContextParams::default().with_n_ctx(NonZeroU32::new(self.ctx_size));
         let mut ctx = self
@@ -248,18 +255,20 @@ impl RewriteEngine {
     }
 
     /// Single-shot rewrite with a caller-supplied sampler. Shared between
-    /// `rewrite_streaming` (greedy chain) and `rewrite_variants` (per-variant
-    /// sampler) — but kept private and parameter-driven so the public APIs
+    /// `rewrite_streaming` (greedy chain), `rewrite_variants` (per-variant
+    /// sampler), and the `quill-rewrite` CLI (when called with --temperature
+    /// for RSFT data generation). Parameter-driven so the public APIs
     /// don't accidentally share sampler state. Each call builds a fresh
     /// context, so concurrent / sequential calls don't share KV cache.
-    fn rewrite_one(
+    pub fn rewrite_one(
         &self,
         text: &str,
         instruction: Option<&str>,
         mut sampler: LlamaSampler,
     ) -> Result<String> {
-        let src = format!("{} {}", instruction.unwrap_or(DEFAULT_INSTRUCTION), text);
-        let prompt = PROMPT_TEMPLATE.replace("{src}", &src);
+        let prompt = PROMPT_TEMPLATE
+            .replace("{instruction}", instruction.unwrap_or(DEFAULT_INSTRUCTION))
+            .replace("{source}", text);
 
         let ctx_params = LlamaContextParams::default().with_n_ctx(NonZeroU32::new(self.ctx_size));
         let mut ctx = self
