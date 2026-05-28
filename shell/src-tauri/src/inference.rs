@@ -34,7 +34,12 @@ const PROMPT_TEMPLATE: &str =
 const STOP_MARKER: &str = "<|im_end|>";
 
 /// Default system message when no explicit instruction is supplied.
-const DEFAULT_INSTRUCTION: &str = "You are a copy editor. Fix the grammar and improve clarity. Output only the corrected text, nothing else.";
+/// Kept short on purpose — measured empirically: adding "preserve
+/// numerals / acronyms / product names verbatim" REGRESSED eval
+/// pass-rate 34% → 26% on the 1.2B model. Small models follow short
+/// focused prompts better than long checklists.
+const DEFAULT_INSTRUCTION: &str = "You are a copy editor. Fix the grammar and improve clarity. \
+Output only the corrected text, nothing else.";
 
 /// Send/Sync wrapper around the raw LoRA adapter handle.
 ///
