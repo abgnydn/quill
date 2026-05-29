@@ -819,10 +819,27 @@ function renderModelList(models, dlStatus) {
   const list = document.getElementById("model-list");
   if (!list) return;
   list.innerHTML = "";
-  for (const m of models) {
+
+  // Hide base models that exist only as substrates for adapter entries —
+  // users pick the *capability* ("Nib-Faithful"), not the bytes underneath.
+  const byId = new Map(models.map(m => [m.id, m]));
+  const baseIds = new Set(
+    models.filter(m => m.requires_base).map(m => m.requires_base)
+  );
+  const visible = models.filter(m => !baseIds.has(m.id));
+
+  for (const m of visible) {
     // `m` is ModelInfoExt: info fields flattened in + installed/selected.
-    const selectedId = models.find(x => x.selected)?.id;
     const installed = m.installed;
+    const baseInfo = m.requires_base ? byId.get(m.requires_base) : null;
+    // For adapter entries, the download routes to the base — match the
+    // progress tracker on EITHER the adapter id or its base id.
+    const dlMatchId = baseInfo ? baseInfo.id : m.id;
+    const isDownloading =
+      dlStatus.model_id === dlMatchId && dlStatus.state === "running";
+    const dlFailed =
+      dlStatus.model_id === dlMatchId && dlStatus.state === "failed";
+
     const row = document.createElement("label");
     row.className = "model-row" + (m.selected ? " selected" : "");
 
@@ -849,11 +866,10 @@ function renderModelList(models, dlStatus) {
 
     const name = document.createElement("div");
     name.className = "model-name";
-    // Pill: prefer "bundled" label when canonically bundled, else
-    // "downloaded" if present on disk, else nothing (needs download).
     let statusPill = '';
     if (m.bundled && installed) statusPill = '<span class="pill bundled">bundled</span>';
     else if (installed) statusPill = '<span class="pill downloaded">downloaded</span>';
+    else if (baseInfo) statusPill = '<span class="pill">needs base</span>';
     name.innerHTML =
       `<span>${escHtml(m.display_name)}</span>` +
       `<span class="pill">${escHtml(m.params)}</span>` +
@@ -866,14 +882,19 @@ function renderModelList(models, dlStatus) {
     blurb.textContent = m.blurb;
     info.appendChild(blurb);
 
-    // Download button only for non-bundled AND not-installed models.
-    // (Full installer ships Nib-Qwen v2 bundled — installed already.)
-    const isDownloading =
-      dlStatus.model_id === m.id && dlStatus.state === "running";
-    if (!installed && !isDownloading && m.url) {
+    // Download button: only when this entry needs network. For adapters,
+    // "this entry needs network" = its base is missing (the adapter
+    // itself ships bundled). The Rust side routes the click to the
+    // right id via `download_target`.
+    const downloadable = !installed && !isDownloading && (m.url || baseInfo?.url);
+    if (downloadable) {
       const btn = document.createElement("button");
       btn.className = "model-action";
-      btn.textContent = `↓ Download (${m.size_mb} MB)`;
+      const dlSize = baseInfo ? baseInfo.size_mb : m.size_mb;
+      const dlLabel = baseInfo
+        ? `↓ Download Qwen base (${dlSize} MB, one-time)`
+        : `↓ Download (${dlSize} MB)`;
+      btn.textContent = dlLabel;
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
         try {
@@ -886,17 +907,18 @@ function renderModelList(models, dlStatus) {
       info.appendChild(btn);
     }
     if (isDownloading) {
+      const totalMb = baseInfo ? baseInfo.size_mb : m.size_mb;
       const pct = dlStatus.total_bytes > 0
         ? Math.min(100, (dlStatus.bytes_done / dlStatus.total_bytes) * 100)
         : 0;
       const prog = document.createElement("div");
       prog.className = "model-progress";
       prog.innerHTML =
-        `Downloading… ${(dlStatus.bytes_done / 1024 / 1024).toFixed(1)} MB / ${m.size_mb} MB (${pct.toFixed(0)}%)` +
+        `Downloading… ${(dlStatus.bytes_done / 1024 / 1024).toFixed(1)} MB / ${totalMb} MB (${pct.toFixed(0)}%)` +
         `<div class="model-progress-bar"><div style="width:${pct}%"></div></div>`;
       info.appendChild(prog);
     }
-    if (dlStatus.model_id === m.id && dlStatus.state === "failed") {
+    if (dlFailed) {
       const err = document.createElement("div");
       err.className = "model-progress";
       err.style.color = "#ff7878";

@@ -130,31 +130,38 @@ impl RewriteState {
 }
 
 /// Resolve the model path. Priority:
-///   1. `QUILL_MODEL` env var (dev override — exact path).
+///   1. `QUILL_MODEL` env var (dev override — exact path, no adapter).
 ///   2. `~/Library/Application Support/Quill/config.json`'s
 ///      `selected_model` field, resolved via the `models::REGISTRY`.
-///      For bundled models → app resource; for downloaded models →
-///      `~/Library/Application Support/Quill/models/<filename>.gguf`.
-///   3. Fall back to the bundled default if the selected model file
-///      doesn't exist on disk (e.g. user selected a model but the
-///      download was deleted).
+///      Adapter entries return both base + adapter; standalone models
+///      return just the base.
+///   3. Fall back to the bundled default if the selected model isn't
+///      fully installed on disk (e.g. user selected an adapter but the
+///      base wasn't downloaded yet).
 pub fn resolve_model_path(app: &tauri::App) -> Option<std::path::PathBuf> {
+    resolve_model_paths(app).map(|p| p.base)
+}
+
+/// Like `resolve_model_path` but also returns the LoRA adapter path
+/// when the selected model is an adapter entry. Returns `(base, None)`
+/// for standalone models.
+pub fn resolve_model_paths(app: &tauri::App) -> Option<crate::models::ModelPaths> {
     if let Ok(env) = std::env::var("QUILL_MODEL") {
-        return Some(env.into());
+        // Dev override: take env path as a raw base, no adapter wiring.
+        return Some(crate::models::ModelPaths { base: env.into(), adapter: None });
     }
 
-    // Read selected_model directly from disk — we don't have ConfigStore
-    // wired up at this point in setup.
     let selected_id = read_selected_model_id().unwrap_or_else(|| "lfm2.5-350m".to_string());
-    if let Some(p) = crate::models::resolve_path(app, &selected_id) {
-        if p.exists() {
-            eprintln!("[nib] resolved selected model '{selected_id}' → {}", p.display());
-            return Some(p);
-        }
-        eprintln!("[nib] selected model '{selected_id}' missing on disk — falling back");
+    if let Some(paths) = crate::models::resolve_paths(app, &selected_id) {
+        eprintln!(
+            "[nib] resolved selected model '{selected_id}' → {} (adapter={})",
+            paths.base.display(),
+            paths.adapter.as_ref().map(|p| p.display().to_string()).unwrap_or_else(|| "none".into()),
+        );
+        return Some(paths);
     }
-    // Fallback: bundled default.
-    crate::models::resolve_path(app, "lfm2.5-350m")
+    eprintln!("[nib] selected model '{selected_id}' not fully installed — falling back");
+    crate::models::resolve_paths(app, "lfm2.5-350m")
 }
 
 /// Peek at config.json's selected_model without spinning up the full

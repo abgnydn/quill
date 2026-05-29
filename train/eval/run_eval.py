@@ -85,17 +85,12 @@ def run_model(
 ) -> str:
     """Single-shot generation via Nib's own quill-rewrite binary.
     Same engine as the running app — eval matches user experience.
-    `adapter_path` not yet supported by quill-rewrite CLI (TODO: extend
-    it to accept --adapter for LoRA eval).
     """
     cmd = [QUILL_REWRITE, "-m", model_path, "-t", source]
     if instruction:
         cmd += ["-i", instruction]
     if adapter_path:
-        # quill-rewrite doesn't accept --adapter yet; warn loudly so we
-        # don't silently eval the wrong thing.
-        print(f"[WARN] adapter_path={adapter_path} ignored — quill-rewrite "
-              f"needs --adapter support", file=sys.stderr)
+        cmd += ["--adapter", adapter_path]
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=120,

@@ -1,1 +1,7 @@
-data/
+# Ignore binary artifacts + caches by default, but allow JSONL data
+# files so RSFT inputs/outputs are reproducible from the repo.
+data/cache/
+data/*.bin
+data/*.safetensors
+data/*.gguf
+data/*.parquet

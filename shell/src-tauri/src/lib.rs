@@ -303,8 +303,19 @@ pub fn run() {
             }
 
             app.manage(CheckerState::new());
-            let model_path = state::resolve_model_path(app);
-            app.manage(RewriteState::from_path(model_path));
+            // Adapter-aware load: if the selected model is an adapter
+            // entry, use base + registry adapter (premium tier). Else
+            // fall through to base + optional personal-adapter.
+            let rewrite_state = match state::resolve_model_paths(app) {
+                Some(crate::models::ModelPaths { base, adapter: Some(adapter) }) => {
+                    RewriteState::from_paths(Some(base), Some(adapter))
+                }
+                Some(crate::models::ModelPaths { base, adapter: None }) => {
+                    RewriteState::from_path(Some(base))
+                }
+                None => RewriteState::from_path(None),
+            };
+            app.manage(rewrite_state);
 
             match journal::Journal::open_default() {
                 Ok(j) => {

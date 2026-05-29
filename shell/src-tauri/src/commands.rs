@@ -480,6 +480,7 @@ pub fn model_set_selected(
 #[tauri::command]
 pub fn model_download(
     id: String,
+    app: tauri::AppHandle,
     tracker: State<'_, Arc<crate::models::DownloadTracker>>,
 ) -> Result<crate::models::DownloadStatus, String> {
     // Refuse to start a second download while one is running.
@@ -487,7 +488,13 @@ pub fn model_download(
     if current.state == crate::models::DownloadState::Running {
         return Err(format!("download already running: {}", current.model_id));
     }
-    crate::models::spawn_download(id.clone(), tracker.inner().clone(), None);
+    // Adapter entries: download the base (the adapter ships bundled).
+    // For standalone models this returns `id` itself. Returns None when
+    // everything's already on disk → nothing to do.
+    let target = crate::models::download_target(&app, &id)
+        .ok_or_else(|| format!("{id} is already installed"))?
+        .to_string();
+    crate::models::spawn_download(target, tracker.inner().clone(), None);
     Ok(tracker.snapshot())
 }
 

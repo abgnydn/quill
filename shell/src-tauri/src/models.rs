@@ -32,9 +32,25 @@ pub struct ModelInfo {
     pub url: Option<&'static str>,
     /// On-disk filename (also used as bundle resource name when bundled).
     pub filename: &'static str,
+    /// Set on adapter-only entries: the registry id of the base model
+    /// this adapter layers on top of. `None` for standalone models.
+    /// When set, [`resolve_paths`] returns the base path + the adapter
+    /// path separately, and `is_installed` requires *both* files present.
+    pub requires_base: Option<&'static str>,
+}
+
+/// Bundle of paths needed to load a registry entry. For standalone
+/// models, `adapter` is `None`; for adapter entries it carries the
+/// LoRA `.gguf` on top of the base.
+#[derive(Clone, Debug)]
+pub struct ModelPaths {
+    pub base: PathBuf,
+    pub adapter: Option<PathBuf>,
 }
 
 /// All models Nib can run. Order = display order in the settings panel.
+/// Base entries (no `requires_base`) come first so adapter entries can
+/// reference them by id.
 pub const REGISTRY: &[ModelInfo] = &[
     ModelInfo {
         id: "lfm2.5-350m",
@@ -46,19 +62,41 @@ pub const REGISTRY: &[ModelInfo] = &[
         bundled: true,
         url: None,
         filename: "lfm2.5-350m-q4_k_m.gguf",
+        requires_base: None,
     },
+    // Stock Qwen 2.5-1.5B base — the substrate every Nib adapter v2.x+
+    // layers on top of. Standalone-usable but the registry hides it
+    // unless an adapter that needs it is selected.
     ModelInfo {
-        id: "nib-qwen-v2",
-        display_name: "Nib-Qwen v2 (1.5B, faithful)",
+        id: "qwen2.5-1.5b-instruct",
+        display_name: "Qwen 2.5 1.5B Instruct (base)",
         params: "1.5B",
         size_mb: 940,
-        blurb: "Premium. Qwen 2.5-1.5B fine-tuned by Nib on a faithful-\
-                rewrite dataset — preserves facts, numbers, and \
-                technical tokens. 70% pass on our internal eval (vs 34% \
-                for the 350M default). 940 MB download (one-time).",
+        blurb: "Stock Qwen base. Nib adapters (v2.x+) layer on top of \
+                this — download once, reuse across every future Nib LoRA.",
         bundled: false,
-        url: Some("https://github.com/abgnydn/quill/releases/download/v2.0.0/nib-qwen-v2-q4_k_m.gguf"),
-        filename: "nib-qwen-v2-q4_k_m.gguf",
+        url: Some("https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf?download=true"),
+        filename: "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+        requires_base: None,
+    },
+    // Nib's faithful-rewrite LoRA — ships bundled in the .app (~50 MB),
+    // applied at runtime on top of the Qwen base. Each future iteration
+    // (v2.1, v2.2, …) ships as a tiny adapter swap, no base re-download.
+    ModelInfo {
+        id: "nib-qwen-v2",
+        display_name: "Nib-Faithful v2 (Qwen 1.5B + LoRA)",
+        params: "1.5B + LoRA",
+        size_mb: 36,
+        blurb: "Premium. Nib's faithful-rewrite LoRA layered on Qwen 2.5-\
+                1.5B — preserves facts, numbers, and technical tokens. \
+                70% pass on our internal eval (vs 34% for the 350M \
+                default). Adapter is ~36 MB and ships bundled; the 940 MB \
+                Qwen base downloads once, reusable for any future Nib \
+                adapter.",
+        bundled: true,
+        url: Some("https://github.com/abgnydn/quill/releases/download/v2.1.0/nib-faithful-f16.gguf"),
+        filename: "nib-faithful-f16.gguf",
+        requires_base: Some("qwen2.5-1.5b-instruct"),
     },
 ];
 
@@ -94,11 +132,62 @@ pub fn resolve_path<R: tauri::Runtime, M: tauri::Manager<R>>(
 }
 
 /// Runtime check: is the model on disk anywhere we can load from?
+/// For adapter entries this requires *both* the adapter and its base
+/// to be present — anything else and the engine couldn't load it.
 pub fn is_installed<R: tauri::Runtime, M: tauri::Manager<R>>(
     app: &M,
     id: &str,
 ) -> bool {
-    resolve_path(app, id).is_some()
+    resolve_paths(app, id).is_some()
+}
+
+/// Resolve every file needed to actually load `id`. For standalone
+/// models this is just the one path; for adapter entries it's `(base,
+/// Some(adapter))`. Returns `None` if any required file is missing.
+pub fn resolve_paths<R: tauri::Runtime, M: tauri::Manager<R>>(
+    app: &M,
+    id: &str,
+) -> Option<ModelPaths> {
+    let info = lookup(id);
+    match info.requires_base {
+        Some(base_id) => {
+            let base = resolve_path(app, base_id)?;
+            let adapter = resolve_path(app, id)?;
+            Some(ModelPaths { base, adapter: Some(adapter) })
+        }
+        None => {
+            let base = resolve_path(app, id)?;
+            Some(ModelPaths { base, adapter: None })
+        }
+    }
+}
+
+/// What to download when the user clicks "install" on `id`. For
+/// standalone models this is `id` itself; for an adapter entry it's
+/// the base (since the adapter ships bundled in the .app). Returns
+/// `None` if everything's already on disk.
+pub fn download_target<R: tauri::Runtime, M: tauri::Manager<R>>(
+    app: &M,
+    id: &str,
+) -> Option<&'static str> {
+    let info = lookup(id);
+    match info.requires_base {
+        Some(base_id) => {
+            // Adapter entry: download the base if absent.
+            if resolve_path(app, base_id).is_none() {
+                Some(base_id)
+            } else {
+                None
+            }
+        }
+        None => {
+            if resolve_path(app, id).is_none() {
+                Some(info.id)
+            } else {
+                None
+            }
+        }
+    }
 }
 
 /// Extended ModelInfo with runtime "installed" + "loaded" flags. Used
@@ -325,5 +414,24 @@ mod tests {
     #[test]
     fn lookup_finds_known_models() {
         assert_eq!(lookup("nib-qwen-v2").id, "nib-qwen-v2");
+        assert_eq!(lookup("qwen2.5-1.5b-instruct").id, "qwen2.5-1.5b-instruct");
+    }
+
+    #[test]
+    fn adapter_entries_point_at_real_base() {
+        for m in REGISTRY {
+            if let Some(base_id) = m.requires_base {
+                let base = lookup(base_id);
+                assert_eq!(
+                    base.id, base_id,
+                    "adapter {} → base {} is not in registry",
+                    m.id, base_id,
+                );
+                assert!(
+                    base.requires_base.is_none(),
+                    "adapter base must be standalone (no nested adapters)",
+                );
+            }
+        }
     }
 }

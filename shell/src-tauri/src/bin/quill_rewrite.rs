@@ -24,6 +24,7 @@ use quill_lib::inference::RewriteEngine;
 fn main() -> anyhow::Result<()> {
     let mut args = env::args().skip(1);
     let mut model: Option<PathBuf> = None;
+    let mut adapter: Option<PathBuf> = None;
     let mut text: Option<String> = None;
     let mut instruction: Option<String> = None;
     let mut temperature: Option<f32> = None;
@@ -33,6 +34,9 @@ fn main() -> anyhow::Result<()> {
         match arg.as_str() {
             "--model" | "-m" => {
                 model = args.next().map(PathBuf::from);
+            }
+            "--adapter" | "-a" => {
+                adapter = args.next().map(PathBuf::from);
             }
             "--text" | "-t" => {
                 text = args.next();
@@ -65,8 +69,14 @@ fn main() -> anyhow::Result<()> {
     let text = text.ok_or_else(|| anyhow::anyhow!("--text STRING required"))?;
 
     eprintln!("[quill] loading {} …", model.display());
+    if let Some(a) = &adapter {
+        eprintln!("[quill] + adapter {} …", a.display());
+    }
     let t0 = Instant::now();
-    let engine = RewriteEngine::load(&model)?;
+    let engine = match adapter.as_ref() {
+        Some(a) => RewriteEngine::load_with_adapter(&model, Some(a))?,
+        None => RewriteEngine::load(&model)?,
+    };
     eprintln!("[quill] loaded in {:.2}s", t0.elapsed().as_secs_f32());
 
     let t1 = Instant::now();
@@ -110,11 +120,14 @@ fn print_help() {
         "quill-rewrite — single-shot rewrite via GGUF
 
 USAGE:
-    quill-rewrite --model PATH --text STRING [--instruction STRING]
+    quill-rewrite --model PATH [--adapter PATH] --text STRING
+                  [--instruction STRING]
                   [--temperature F --top-p F --seed N]
 
 ARGS:
-    -m, --model PATH         Path to .gguf (e.g. quill-q4_k_m.gguf)
+    -m, --model PATH         Path to base .gguf (e.g. qwen2.5-1.5b-instruct.gguf)
+    -a, --adapter PATH       Optional LoRA adapter .gguf applied on top of
+                             the base model (e.g. nib-faithful.gguf).
     -t, --text STRING        Source text to rewrite
     -i, --instruction STR    Optional editing directive
                              (default: \"Fix the grammar and improve clarity:\")
@@ -127,6 +140,10 @@ ARGS:
 EXAMPLES:
     # Greedy (production runtime behavior):
     quill-rewrite -m model.gguf -t \"hello world\"
+
+    # Base + LoRA adapter (v2.1 adapter-only ship):
+    quill-rewrite -m qwen2.5-1.5b.gguf -a nib-faithful.gguf \\
+        -t \"I has a apple.\"
 
     # 8 diverse samples for RSFT (vary --seed):
     for s in 1 2 3 4 5 6 7 8; do
