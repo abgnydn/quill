@@ -1,0 +1,517 @@
+{
+  "label": "v2.1-indist-h2",
+  "model": "/Users/ahmetbarisgunaydin2/quill-research/models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+  "adapter": "/Users/ahmetbarisgunaydin2/quill/shell/src-tauri/resources/nib-faithful-f16.gguf",
+  "n_cases": 50,
+  "n_pass": 49,
+  "pass_rate": 98.0,
+  "duration_s": 78.8,
+  "avg_words": 14.7,
+  "scores": [
+    {
+      "id": "prj_estimate_short",
+      "ok": true,
+      "word_count": 4,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "manage users: 1 day",
+      "failure_reasons": []
+    },
+    {
+      "id": "prj_estimate_long",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Backend setup: 3 days. Frontend: 2 days. QA: 1 day. Total: 6 days estimated, with a 7-day buffer.",
+      "failure_reasons": []
+    },
+    {
+      "id": "meeting_recap",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Sarah will be responsible for the migration. The deadline is May 30. Two engineers have been assigned.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_chat",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Hey, can you push the latest changes? I'll review it in about 20 minutes.",
+      "failure_reasons": []
+    },
+    {
+      "id": "refund_status",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Your refund of $47.30 was processed on March 14 and should arrive within 5-7 business days.",
+      "failure_reasons": []
+    },
+    {
+      "id": "bug_report",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Login fails in Safari 17 when 2FA is enabled. The console displays a CORS error at /api/auth/token.",
+      "failure_reasons": []
+    },
+    {
+      "id": "product_announce",
+      "ok": true,
+      "word_count": 13,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "New analytics dashboard launches on Tuesday, featuring 14 metrics and exportable to CSV.",
+      "failure_reasons": []
+    },
+    {
+      "id": "data_summary",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Revenue saw a 12% QoQ growth. Churn rate decreased to 2.1%. ARPU remains at $48.",
+      "failure_reasons": []
+    },
+    {
+      "id": "decline_meeting",
+      "ok": true,
+      "word_count": 11,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Can't make Thursday's standup. Out for a dentist appointment.",
+      "failure_reasons": []
+    },
+    {
+      "id": "code_review_feedback",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Add a maxAttempts guard to the retry loop in handleRequest() with a constant of 5.",
+      "failure_reasons": []
+    },
+    {
+      "id": "escalation_brief",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Customer escalation: Acme Corp requests a refund and credit. Account manager is not available until Wednesday.",
+      "failure_reasons": []
+    },
+    {
+      "id": "tech_choice",
+      "ok": true,
+      "word_count": 12,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "We chose Postgres over Mongo due to its highly relational data model.",
+      "failure_reasons": []
+    },
+    {
+      "id": "polite_request",
+      "ok": true,
+      "word_count": 11,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Could you please send me the deck before tomorrow's call?",
+      "failure_reasons": []
+    },
+    {
+      "id": "perf_note",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Page load speed reduced from 3.2 seconds to 0.8 seconds after bundle split.",
+      "failure_reasons": []
+    },
+    {
+      "id": "layoff_announce",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "15% of the staff are affected. Severance pay is 4 months' base salary plus benefits through year-end.",
+      "failure_reasons": []
+    },
+    {
+      "id": "api_status",
+      "ok": true,
+      "word_count": 10,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Status: degraded. Affected endpoint: /v2/search. Error rate: 8%. Investigating.",
+      "failure_reasons": []
+    },
+    {
+      "id": "deadline_push",
+      "ok": true,
+      "word_count": 11,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Launching from June 3 to June 10. Three blockers remain open.",
+      "failure_reasons": []
+    },
+    {
+      "id": "recipe_note",
+      "ok": true,
+      "word_count": 13,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Bake at 180\u00b0C for 25 minutes. Let cool 10 minutes before serving.",
+      "failure_reasons": []
+    },
+    {
+      "id": "vendor_pitch",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Our pricing begins at $99 per month for up to 5 seats. Annual contracts offer a 20% discount.",
+      "failure_reasons": []
+    },
+    {
+      "id": "travel_logistics",
+      "ok": false,
+      "word_count": 20,
+      "word_count_ok": false,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "2h"
+      ],
+      "output": "Flight QR 845 lands at DOH at 14:35. There is a layover of 2 hours before the BKK leg.",
+      "failure_reasons": [
+        "words: 20 not in [9,18]",
+        "missing_keep: ['2h']"
+      ]
+    },
+    {
+      "id": "interview_followup",
+      "ok": true,
+      "word_count": 13,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Thanks for our conversation yesterday. I'll send the technical document by Friday.",
+      "failure_reasons": []
+    },
+    {
+      "id": "contract_clause",
+      "ok": true,
+      "word_count": 12,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Termination necessitates 30 days' written notice. It automatically renews annually unless canceled.",
+      "failure_reasons": []
+    },
+    {
+      "id": "team_intro",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Hi, I'm Lin joining the platform team from infrastructure. I have experience in distributed systems.",
+      "failure_reasons": []
+    },
+    {
+      "id": "survey_results",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "NPS decreased from 42 to 31 quarter-over-quarter. 68% cite slow response times.",
+      "failure_reasons": []
+    },
+    {
+      "id": "calendar_invite",
+      "ok": true,
+      "word_count": 11,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Quarterly review scheduled for Thursday at 3pm PT. Calendar invite updated.",
+      "failure_reasons": []
+    },
+    {
+      "id": "hiring_update",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Sent an offer to the senior backend candidate, with a start date of April 15.",
+      "failure_reasons": []
+    },
+    {
+      "id": "feature_flag",
+      "ok": true,
+      "word_count": 13,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Rolling out lazy-load to 5% of traffic today. Full ramp by Wednesday.",
+      "failure_reasons": []
+    },
+    {
+      "id": "customer_complaint",
+      "ok": true,
+      "word_count": 12,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "This is the third bug report this month, with two unresolved earlier.",
+      "failure_reasons": []
+    },
+    {
+      "id": "github_issue",
+      "ok": true,
+      "word_count": 22,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "The `useEffect` cleanup function is not being invoked on route changes in React 19.0.2, as demonstrated in the attached gist.",
+      "failure_reasons": []
+    },
+    {
+      "id": "price_change",
+      "ok": true,
+      "word_count": 23,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Pro-tier subscription rates increase from $19 to $24 per month on July 1, with existing subscribers grandfathered for an additional 12 months.",
+      "failure_reasons": []
+    },
+    {
+      "id": "runbook_step",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "If PAGER-403 alert triggers, restart the api-gateway pod and verify ratelimit dashboard.",
+      "failure_reasons": []
+    },
+    {
+      "id": "vacation_note",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "May 28 to June 4: Cover: Maya for production issues, Tom for design reviews.",
+      "failure_reasons": []
+    },
+    {
+      "id": "interview_loop",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "5 rounds: phone screen, take-home coding, system design, behavioral interview, founder interview. Total ~6 hours over 2 weeks.",
+      "failure_reasons": []
+    },
+    {
+      "id": "data_migration",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Migrating 2.4M rows from MySQL to PostgreSQL. Estimated time: 4 hours, with downtime of ~10 minutes.",
+      "failure_reasons": []
+    },
+    {
+      "id": "ack_late",
+      "ok": true,
+      "word_count": 8,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "I missed your Slack yesterday, sorry about that.",
+      "failure_reasons": []
+    },
+    {
+      "id": "pricing_decline",
+      "ok": true,
+      "word_count": 20,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Our budget exceeds $15K/year. The cap is set at $9K. Is there another cap you'd like to adjust?",
+      "failure_reasons": []
+    },
+    {
+      "id": "changelog",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "v2.4.1: fix crash on empty selection, add dark mode, update dependencies. No changes to functionality.",
+      "failure_reasons": []
+    },
+    {
+      "id": "escalate_to_legal",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Customer files lawsuit over data breach. Situation escalating to legal action. Response required by EOD.",
+      "failure_reasons": []
+    },
+    {
+      "id": "q3_okr",
+      "ok": true,
+      "word_count": 13,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Q3 OKRs: Achieve 50K MAU, ensure 99.9% uptime, launch 2 new integrations.",
+      "failure_reasons": []
+    },
+    {
+      "id": "reminder_dm",
+      "ok": true,
+      "word_count": 8,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Reminder: Standup at 10, design crit at 2.",
+      "failure_reasons": []
+    },
+    {
+      "id": "thanks_note",
+      "ok": true,
+      "word_count": 12,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Thanks for covering the on-call last week. You're a lifesaver!",
+      "failure_reasons": []
+    },
+    {
+      "id": "capacity_update",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "DB capacity at 78%, auto-scale triggers at 85%, manual scale recommended this week.",
+      "failure_reasons": []
+    },
+    {
+      "id": "product_kill",
+      "ok": true,
+      "word_count": 13,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Legacy export API will be sunsetted on August 31. Migration guide is available.",
+      "failure_reasons": []
+    },
+    {
+      "id": "intro_meeting",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Would you like to dedicate 30 minutes next week to align on the H1 roadmap?",
+      "failure_reasons": []
+    },
+    {
+      "id": "sales_qualified",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Acme Corp meets all 3 SQL criteria: budget confirmed, decision-maker engaged, and a 90-day timeline.",
+      "failure_reasons": []
+    },
+    {
+      "id": "infra_warning",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "GPU pool at 92% utilization. Two more training jobs queued. Cluster will be saturated in approximately 40 minutes.",
+      "failure_reasons": []
+    },
+    {
+      "id": "talk_proposal",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Submitting talk to KubeCon EU 2026 titled \"Edge inference at scale\" for a 45-minute slot.",
+      "failure_reasons": []
+    },
+    {
+      "id": "customer_quote",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Customer feedback: Switching from competitor saved us 6 hours of manual reconciliation per week.",
+      "failure_reasons": []
+    },
+    {
+      "id": "feature_request",
+      "ok": true,
+      "word_count": 12,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "+1 for keyboard shortcut for archive. It's 3 clicks deep now.",
+      "failure_reasons": []
+    },
+    {
+      "id": "hiring_pass",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Strong in system design, but weak on coding. Recommend passing for a senior IC role.",
+      "failure_reasons": []
+    }
+  ]
+}

@@ -1,0 +1,312 @@
+{
+  "label": "v2.1-holdout-h2",
+  "model": "/Users/ahmetbarisgunaydin2/quill-research/models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+  "adapter": "/Users/ahmetbarisgunaydin2/quill/shell/src-tauri/resources/nib-faithful-f16.gguf",
+  "n_cases": 30,
+  "n_pass": 30,
+  "pass_rate": 100.0,
+  "duration_s": 62.8,
+  "avg_words": 17.3,
+  "scores": [
+    {
+      "id": "med_dose_warning",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Hold metformin for 48 hours before contrast CT. Resume only after eGFR rechecks are above 45.",
+      "failure_reasons": []
+    },
+    {
+      "id": "med_handoff",
+      "ok": true,
+      "word_count": 21,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Patient stable post-operation. Vital signs: BP 118/76, HR 82, SpO2 98% on room air. Pain 3/10 with PCA.",
+      "failure_reasons": []
+    },
+    {
+      "id": "med_drug_interaction",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Warfarin and amoxicillin can elevate INR. Recheck INR within 5 days of starting the antibiotic course.",
+      "failure_reasons": []
+    },
+    {
+      "id": "med_dx_pending",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Awaiting MRI lumbar spine and CBC + CMP. Will reassess at follow-up on June 12.",
+      "failure_reasons": []
+    },
+    {
+      "id": "med_referral",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Refer to nephrology for stage 3b CKD workup. Estimated wait time: 6-8 weeks.",
+      "failure_reasons": []
+    },
+    {
+      "id": "legal_filing_deadline",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Motion to dismiss must be filed in EDNY by 5:00pm ET on August 14. Service via ECF only.",
+      "failure_reasons": []
+    },
+    {
+      "id": "legal_settlement",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Plaintiff accepts $1.85 million settlement, payable in 4 quarterly installments starting Q3 2026.",
+      "failure_reasons": []
+    },
+    {
+      "id": "legal_parties",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Acme Corp v. Beta LLC, Case No. 2026-CV-04472, hearing on September 9, Judge Hernandez presiding.",
+      "failure_reasons": []
+    },
+    {
+      "id": "legal_clause_redline",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Remove Section 14.2 (auto-renewal) and add a 30-day opt-out window after each renewal anniversary.",
+      "failure_reasons": []
+    },
+    {
+      "id": "legal_privilege",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Document marked attorney-client privileged. Limit distribution to outside counsel and Tier-1 reviewers.",
+      "failure_reasons": []
+    },
+    {
+      "id": "mkt_campaign_perf",
+      "ok": true,
+      "word_count": 23,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Spring Bloom campaign resulted in 4.2k signups with a $12.40 CAC. LTV:CAC ratio of 3.8 \u2014 green light to scale.",
+      "failure_reasons": []
+    },
+    {
+      "id": "mkt_ab_test",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Variant B (orange CTA) increased CTR from 2.1% to 3.6%. Ship to 100% by Friday.",
+      "failure_reasons": []
+    },
+    {
+      "id": "mkt_email_subject",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Subject line: \"\ud83d\ude80 Last 24 hrs: 40% off Pro plans\" Open rate target: 28%, baseline: 22%",
+      "failure_reasons": []
+    },
+    {
+      "id": "mkt_partner_deal",
+      "ok": true,
+      "word_count": 20,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Co-marketing with Stripe: Joint webinar scheduled for June 18, targeting an expected audience of 8k developers across both lists.",
+      "failure_reasons": []
+    },
+    {
+      "id": "mkt_attribution",
+      "ok": true,
+      "word_count": 13,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Last-touch attribution credits 41% of revenue last week. Linear model predicts 26%.",
+      "failure_reasons": []
+    },
+    {
+      "id": "cs_refund_request",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Refund for order #A8842 denied under the 30-day return policy. Order date: April 2.",
+      "failure_reasons": []
+    },
+    {
+      "id": "cs_escalation",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Ticket #44102 escalated to Tier 2, with a customer reporting the 5th occurrence of the same sync error.",
+      "failure_reasons": []
+    },
+    {
+      "id": "cs_billing_dispute",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Charge of $39.99 on March 21 disputed by customer. Account was downgraded March 15.",
+      "failure_reasons": []
+    },
+    {
+      "id": "cs_outage_followup",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Following the 47-minute outage on May 19, accounts will receive a 15% service credit on their next invoice.",
+      "failure_reasons": []
+    },
+    {
+      "id": "cs_account_recovery",
+      "ok": true,
+      "word_count": 23,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Account recovery necessitates government ID and the last four digits of the card on file. The process typically takes 3-5 business days.",
+      "failure_reasons": []
+    },
+    {
+      "id": "tech_api_v2",
+      "ok": true,
+      "word_count": 20,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "POST /v3/messages now requires the `x-api-version: 2026-04-01` header. Old endpoints will sunset on July 1.",
+      "failure_reasons": []
+    },
+    {
+      "id": "tech_config_change",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Set MAX_CONNECTIONS=512 in /etc/postgresql/16/main/postgresql.conf and reload via SIGHUP.",
+      "failure_reasons": []
+    },
+    {
+      "id": "tech_dependency_bump",
+      "ok": true,
+      "word_count": 20,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Bumped @opentelemetry/sdk-node from 0.46.0 to 0.52.1, introducing a breaking change in resource detector initialization.",
+      "failure_reasons": []
+    },
+    {
+      "id": "tech_incident_rca",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "RCA: Missing index on users(email) caused 8s p95 on /login after May 23 4.2M-row backfill.",
+      "failure_reasons": []
+    },
+    {
+      "id": "tech_feature_flag",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Enable `streaming_v2` for 5% of traffic in us-east-1. Auto-rollback if error rate exceeds 0.4%.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_pr_review",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "LGTM, just one nit on naming \u2014 can we call it `fetchUser` not `getUserData`? more consistent with the rest.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_lunch",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Hey, anyone interested in ramen at Ippudo around 12:30? Max 4 people, tables booked fast.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_thx",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Thanks for jumping on the prod issue last night, total lifesaver. You owe me a coffee.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_decline",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "I have to cancel my standup tomorrow \u2014 dentist at 9. Please let me know if anything is urgent afterward.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_pushback",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "I think we don't need a meeting for this. Can we do it asynchronously on #eng-platform?",
+      "failure_reasons": []
+    }
+  ]
+}

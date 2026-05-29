@@ -115,6 +115,10 @@ def chatml_triple(instruction: str | None, source: str, output: str) -> dict[str
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True, help="base GGUF")
+    ap.add_argument("--adapter", default=None,
+                    help="Optional LoRA adapter GGUF. Used for self-bootstrap "
+                         "RSFT — sample from <base + previous adapter> instead "
+                         "of <base> alone, so v(N+1) trains on v(N)'s passing outputs.")
     ap.add_argument("--seeds", required=True, help="seed prompt JSONL (eval-format)")
     ap.add_argument("--out", required=True, help="output JSONL path")
     ap.add_argument("--n-samples", type=int, default=8,
@@ -182,7 +186,8 @@ def main() -> int:
             out = run_model_with_sampling(args.model, source, instr,
                                           temperature=args.temperature,
                                           top_p=args.top_p,
-                                          seed=seed)
+                                          seed=seed,
+                                          adapter=args.adapter)
             n_total += 1
             sc = score_output(case, out)
             if sc.ok:
@@ -207,9 +212,11 @@ def main() -> int:
 def run_model_with_sampling(
     model: str, source: str, instruction: str | None,
     *, temperature: float, top_p: float, seed: int,
+    adapter: str | None = None,
 ) -> str:
     """Like run_eval.run_model but adds --temperature / --top-p / --seed
-    so the same prompt produces diverse candidates per call."""
+    so the same prompt produces diverse candidates per call.
+    Optional --adapter passes through to quill-rewrite for self-bootstrap."""
     import subprocess
     cmd = [
         QUILL_REWRITE, "-m", model, "-t", source,
@@ -219,6 +226,8 @@ def run_model_with_sampling(
     ]
     if instruction:
         cmd += ["-i", instruction]
+    if adapter:
+        cmd += ["--adapter", adapter]
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=120, errors="replace",

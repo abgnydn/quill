@@ -123,6 +123,92 @@ class Score:
 WORD_RE = re.compile(r"\w+", re.UNICODE)
 
 
+# ───────────── semantic must_keep matching (harness v2) ─────────────
+# A "must_keep" token has succeeded if any semantically-equivalent
+# surface form appears in the output. Without this, a model that
+# expands "Sept 9" → "September 9" or "$1.85M" → "$1.85 million" gets
+# scored as a failure even though it preserved the fact perfectly.
+#
+# Forbidden lists stay strict — we don't want to accidentally allow
+# banned filler under expansion.
+
+_MONTHS = {
+    "jan": "january", "feb": "february", "mar": "march", "apr": "april",
+    "jun": "june", "jul": "july", "aug": "august",
+    "sept": "september", "sep": "september",
+    "oct": "october", "nov": "november", "dec": "december",
+}
+
+_ABBREVS = {
+    "ppl": "people", "devs": "developers", "hrs": "hours", "hr": "hour",
+    "mins": "minutes", "secs": "seconds", "yrs": "years",
+    "mos": "months", "wks": "weeks", "pcs": "pieces",
+}
+
+_NUMBER_SCALE = {"k": "thousand", "m": "million", "b": "billion", "t": "trillion"}
+_NUMBER_SCALE_REV = {v: k for k, v in _NUMBER_SCALE.items()}
+
+_DIGIT_WORD = {
+    "1": "one", "2": "two", "3": "three", "4": "four", "5": "five",
+    "6": "six", "7": "seven", "8": "eight", "9": "nine",
+    "10": "ten", "11": "eleven", "12": "twelve",
+}
+_WORD_DIGIT = {v: k for k, v in _DIGIT_WORD.items()}
+
+
+def _normalize_for_match(s: str) -> str:
+    """Lowercase + hyphens-to-spaces + collapse whitespace.
+    Preserves digits, $, %, /, decimal points."""
+    s = s.lower()
+    s = re.sub(r"[-]+", " ", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
+
+
+def _keep_variants(term: str) -> set[str]:
+    """Surface forms equivalent to `term` for must_keep matching."""
+    base = _normalize_for_match(term)
+    out = {base}
+
+    # Bidirectional swap helper for word-token maps.
+    def swap(mapping: dict[str, str]) -> None:
+        for k, v in mapping.items():
+            for s in list(out):
+                if re.search(rf"\b{re.escape(k)}\b", s):
+                    out.add(re.sub(rf"\b{re.escape(k)}\b", v, s))
+
+    swap(_MONTHS)
+    swap({v: k for k, v in _MONTHS.items() if v != "may"})  # avoid "may" verb collision
+    swap(_ABBREVS)
+    swap({v: k for k, v in _ABBREVS.items()})
+    swap(_DIGIT_WORD)
+    swap(_WORD_DIGIT)
+
+    # Number scale: 1.85M ↔ 1.85 million, 8k ↔ 8 thousand.
+    for s in list(out):
+        for m in re.finditer(r"(\d+(?:\.\d+)?)\s*([kmbt])\b", s):
+            num, suf = m.group(1), m.group(2)
+            out.add(s[:m.start()] + f"{num} {_NUMBER_SCALE[suf]}" + s[m.end():])
+        for m in re.finditer(r"(\d+(?:\.\d+)?)\s+(thousand|million|billion|trillion)\b", s):
+            num, full = m.group(1), m.group(2)
+            out.add(s[:m.start()] + f"{num}{_NUMBER_SCALE_REV[full]}" + s[m.end():])
+
+    # Ordinal: "april 2" ↔ "april 2nd".
+    for s in list(out):
+        for m in re.finditer(r"\b(\d{1,3})\b", s):
+            n = m.group(1)
+            for suf in ("st", "nd", "rd", "th"):
+                out.add(s[:m.start()] + f"{n}{suf}" + s[m.end():])
+
+    return out
+
+
+def _keep_matches(term: str, output_normalized: str) -> bool:
+    """True if any semantic variant of `term` is a substring of the
+    normalized output. Used by score_output for the must_keep check."""
+    return any(v in output_normalized for v in _keep_variants(term))
+
+
 def score_output(case: dict[str, Any], output: str) -> Score:
     sc = Score(id=case["id"], ok=True, word_count=0, word_count_ok=True)
     sc.output = output
@@ -154,9 +240,14 @@ def score_output(case: dict[str, Any], output: str) -> Score:
         sc.ok = False
         sc.failure_reasons.append(f"forbidden: {sc.forbidden_hits}")
 
-    # Must-keep: substring is fine — preserves "$47.30", "12%", "/v2/search".
+    # Must-keep: semantic match — accepts month abbrev ↔ full, k/M ↔
+    # thousand/million, digit ↔ word for 1-12, hyphen tolerance, and
+    # ordinal suffixes. Substring of normalized output for everything else.
+    # Preserves "$47.30", "12%", "/v2/search" since those don't trip any
+    # of the variant rules.
+    out_normalized = _normalize_for_match(output)
     for term in case.get("must_keep", []):
-        if term.lower() not in out_lower:
+        if not _keep_matches(term, out_normalized):
             sc.missing_keeps.append(term)
     if sc.missing_keeps:
         sc.ok = False

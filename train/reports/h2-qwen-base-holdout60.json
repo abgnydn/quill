@@ -1,0 +1,691 @@
+{
+  "label": "qwen-base-holdout60",
+  "model": "/Users/ahmetbarisgunaydin2/quill-research/models/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+  "adapter": null,
+  "n_cases": 60,
+  "n_pass": 42,
+  "pass_rate": 70.0,
+  "duration_s": 69.5,
+  "avg_words": 19.0,
+  "scores": [
+    {
+      "id": "med_dose_warning",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Hold metformin for 48 hours before contrast CT. Resume only after eGFR rechecks are above 45.",
+      "failure_reasons": []
+    },
+    {
+      "id": "med_handoff",
+      "ok": false,
+      "word_count": 24,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "BP 118/76",
+        "HR 82"
+      ],
+      "output": "Patient stable post-operation. Vital signs: Blood pressure 118/76, heart rate 82, SpO2 98% on room air. Pain level 3/10 with PCA.",
+      "failure_reasons": [
+        "missing_keep: ['BP 118/76', 'HR 82']"
+      ]
+    },
+    {
+      "id": "med_drug_interaction",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Warfarin and amoxicillin can elevate INR. Recheck INR within 5 days of starting the antibiotic course.",
+      "failure_reasons": []
+    },
+    {
+      "id": "med_dx_pending",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Awaiting MRI lumbar spine and CBC + CMP. Will reassess at follow-up on June 12.",
+      "failure_reasons": []
+    },
+    {
+      "id": "med_referral",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Refer to nephrology for stage 3b CKD workup. Estimated wait time: 6-8 weeks.",
+      "failure_reasons": []
+    },
+    {
+      "id": "legal_filing_deadline",
+      "ok": true,
+      "word_count": 24,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "A motion to dismiss must be filed in the EDNY by 5:00pm ET on August 14. Service must be made via ECF only.",
+      "failure_reasons": []
+    },
+    {
+      "id": "legal_settlement",
+      "ok": false,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "Q3 2026"
+      ],
+      "output": "Plaintiff accepts $1.85 million settlement, payable in four quarterly installments beginning in the third quarter of 2026.",
+      "failure_reasons": [
+        "missing_keep: ['Q3 2026']"
+      ]
+    },
+    {
+      "id": "legal_parties",
+      "ok": true,
+      "word_count": 21,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Acme Corp v. Beta LLC, Case No. 2026-CV-04472, scheduled for hearing on September 9, presided over by Judge Hernandez.",
+      "failure_reasons": []
+    },
+    {
+      "id": "legal_clause_redline",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Remove Section 14.2 (auto-renewal) and include a 30-day opt-out window after each renewal anniversary.",
+      "failure_reasons": []
+    },
+    {
+      "id": "legal_privilege",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Document marked attorney-client privileged. Limit distribution to outside counsel and Tier-1 reviewers.",
+      "failure_reasons": []
+    },
+    {
+      "id": "mkt_campaign_perf",
+      "ok": true,
+      "word_count": 25,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Spring Bloom campaign resulted in 4.2k signups with a $12.40 CAC. LTV:CAC ratio of 3.8 indicates a green light for scaling.",
+      "failure_reasons": []
+    },
+    {
+      "id": "mkt_ab_test",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Variant B (orange CTA) increased CTR from 2.1% to 3.6%. Ship to 100% by Friday.",
+      "failure_reasons": []
+    },
+    {
+      "id": "mkt_email_subject",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Subject line: \"\ud83d\ude80 Last 24 hrs: 40% off Pro plans\" Open rate target: 28%, baseline: 22%",
+      "failure_reasons": []
+    },
+    {
+      "id": "mkt_partner_deal",
+      "ok": false,
+      "word_count": 21,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "8k devs"
+      ],
+      "output": "Co-marketing with Stripe: Joint webinar scheduled for June 18, targeting an expected audience of 8,000 developers across both lists.",
+      "failure_reasons": [
+        "missing_keep: ['8k devs']"
+      ]
+    },
+    {
+      "id": "mkt_attribution",
+      "ok": true,
+      "word_count": 13,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Last-touch attribution credits 41% of revenue last week. Linear model predicts 26%.",
+      "failure_reasons": []
+    },
+    {
+      "id": "cs_refund_request",
+      "ok": true,
+      "word_count": 22,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "The refund for order #A8842 has been declined due to the 30-day return policy. The order was placed on April 2.",
+      "failure_reasons": []
+    },
+    {
+      "id": "cs_escalation",
+      "ok": false,
+      "word_count": 20,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "5th"
+      ],
+      "output": "Ticket #44102 has been escalated to Tier 2, and the customer reports the fifth occurrence of the same sync error.",
+      "failure_reasons": [
+        "missing_keep: ['5th']"
+      ]
+    },
+    {
+      "id": "cs_billing_dispute",
+      "ok": true,
+      "word_count": 20,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "The customer disputes a charge of $39.99 made on March 21, and their account was downgraded on March 15.",
+      "failure_reasons": []
+    },
+    {
+      "id": "cs_outage_followup",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Following the 47-minute outage on May 19, customers will receive a 15% service credit on their next invoice.",
+      "failure_reasons": []
+    },
+    {
+      "id": "cs_account_recovery",
+      "ok": false,
+      "word_count": 26,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "3-5 business days"
+      ],
+      "output": "Account recovery necessitates a government-issued ID and the last four digits of the card on file. The process typically takes 3 to 5 business days.",
+      "failure_reasons": [
+        "missing_keep: ['3-5 business days']"
+      ]
+    },
+    {
+      "id": "tech_api_v2",
+      "ok": true,
+      "word_count": 20,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "POST /v3/messages now requires the `x-api-version: 2026-04-01` header. Old endpoints will sunset on July 1.",
+      "failure_reasons": []
+    },
+    {
+      "id": "tech_config_change",
+      "ok": true,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Set MAX_CONNECTIONS=512 in /etc/postgresql/16/main/postgresql.conf and reload via SIGHUP.",
+      "failure_reasons": []
+    },
+    {
+      "id": "tech_dependency_bump",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Updated @opentelemetry/sdk-node from version 0.46.0 to 0.52.1. Resource detector initialization is now breaking.",
+      "failure_reasons": []
+    },
+    {
+      "id": "tech_incident_rca",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "RCA: Missing index on users(email) caused 8s p95 on /login after 4.2M-row backfill on May 23.",
+      "failure_reasons": []
+    },
+    {
+      "id": "tech_feature_flag",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Enable `streaming_v2` for 5% of traffic in US-East-1. Auto-rollback if error rate exceeds 0.4%.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_pr_review",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "LGTM, just one nit on naming \u2014 can we call it `fetchUser` not `getUserData`? more consistent with the rest.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_lunch",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Hey, anyone up for ramen at Ippudo around 12:30? Max 4 people, table books out fast.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_thx",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Thanks for jumping on the prod issue last night, total lifesaver. I owe you a coffee.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_decline",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "I have to cancel my standup tomorrow \u2014 dentist at 9. Please ping me if anything is urgent.",
+      "failure_reasons": []
+    },
+    {
+      "id": "casual_pushback",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "I'm not sure we need a meeting for this. Can we just do it asynchronously on #eng-platform?",
+      "failure_reasons": []
+    },
+    {
+      "id": "sci_method",
+      "ok": false,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "n=128"
+      ],
+      "output": "128 mice were randomly assigned 1:1 to control vs treatment, with blinded outcome scoring at 14 days.",
+      "failure_reasons": [
+        "missing_keep: ['n=128']"
+      ]
+    },
+    {
+      "id": "sci_citation",
+      "ok": false,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "3 of 4"
+      ],
+      "output": "Smith et al. (2024) replicated the effect in three out of four cohorts; Cohen's d = 0.42.",
+      "failure_reasons": [
+        "missing_keep: ['3 of 4']"
+      ]
+    },
+    {
+      "id": "sci_apparatus",
+      "ok": false,
+      "word_count": 27,
+      "word_count_ok": false,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "NA 1.4"
+      ],
+      "output": "Samples were imaged using a Zeiss LSM 880 confocal at 63x oil, with a numerical aperture (NA) of 1.4 and a pinhole size of 1 AU.",
+      "failure_reasons": [
+        "words: 27 not in [13,24]",
+        "missing_keep: ['NA 1.4']"
+      ]
+    },
+    {
+      "id": "sci_result",
+      "ok": false,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "p<0.001",
+        "72h"
+      ],
+      "output": "Treatment reduced infarct volume by 38% compared to vehicle control at 72 hours post-MCAO.",
+      "failure_reasons": [
+        "missing_keep: ['p<0.001', '72h']"
+      ]
+    },
+    {
+      "id": "sci_protocol",
+      "ok": true,
+      "word_count": 24,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Buffer: 50 mM Tris-HCl, pH 7.4, 150 mM NaCl, 1 mM EDTA. Spin 14,000 g for 10 min at 4\u00b0C.",
+      "failure_reasons": []
+    },
+    {
+      "id": "fin_trade_confirm",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Bought 500 shares of NVDA at $128.40 in account ending 8842. Settles T+1 on May 30.",
+      "failure_reasons": []
+    },
+    {
+      "id": "fin_credit_limit",
+      "ok": false,
+      "word_count": 14,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "$25,000"
+      ],
+      "output": "Credit line raised to $40,000 effective June 1. APR remains at 18.99%.",
+      "failure_reasons": [
+        "missing_keep: ['$25,000']"
+      ]
+    },
+    {
+      "id": "fin_wire_instruction",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Wire $48,750.00 to JPM Chase, ABA 021000021, account 7842-1934, reference invoice INV-2026-0814.",
+      "failure_reasons": []
+    },
+    {
+      "id": "fin_loan_terms",
+      "ok": false,
+      "word_count": 4,
+      "word_count_ok": false,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "30-year",
+        "6.875%",
+        "0.5"
+      ],
+      "output": "Monthly payment: $2,847",
+      "failure_reasons": [
+        "words: 4 not in [12,22]",
+        "missing_keep: ['30-year', '6.875%', '0.5']"
+      ]
+    },
+    {
+      "id": "fin_dividend",
+      "ok": true,
+      "word_count": 21,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "The Q1 dividend of $0.96 per share is payable on June 15 to shareholders of record as of May 31.",
+      "failure_reasons": []
+    },
+    {
+      "id": "edu_course_offered",
+      "ok": false,
+      "word_count": 30,
+      "word_count_ok": false,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "Fall 2026"
+      ],
+      "output": "CS 6.S081 (Operating Systems) is offered in the Fall of 2026. The class meets on Monday and Wednesday from 1-2:30pm. Prerequisites include 6.004 and 6.031.",
+      "failure_reasons": [
+        "words: 30 not in [13,26]",
+        "missing_keep: ['Fall 2026']"
+      ]
+    },
+    {
+      "id": "edu_transcript",
+      "ok": true,
+      "word_count": 20,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Spring 2026 GPA: 3.84. Cumulative GPA: 3.71 over 124 credit hours. Dean's List: 4 of 6 semesters.",
+      "failure_reasons": []
+    },
+    {
+      "id": "edu_deadline",
+      "ok": true,
+      "word_count": 15,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Application deadline: November 15. Test scores must be received by December 1 for full consideration.",
+      "failure_reasons": []
+    },
+    {
+      "id": "edu_office_hours",
+      "ok": true,
+      "word_count": 22,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Office hours: Tu/Th 2-3:30pm in Stata 32-G836. Email TAs (cc:6.824-staff@mit.edu) for any conflicts.",
+      "failure_reasons": []
+    },
+    {
+      "id": "edu_funding",
+      "ok": true,
+      "word_count": 17,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Awarded $42,000 NSF GRFP stipend and $12,000 cost-of-education allowance for AY 2026-27.",
+      "failure_reasons": []
+    },
+    {
+      "id": "re_listing",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "3BR/2.5BA at 482 Oak Ridge Dr, 2,140 sqft, listed $785,000. HOA $145/mo, MLS #PA2641204.",
+      "failure_reasons": []
+    },
+    {
+      "id": "re_lease",
+      "ok": false,
+      "word_count": 21,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "$2,450/mo"
+      ],
+      "output": "12-month lease at $2,450 per month, security deposit $4,900, move-in June 1. Pets allowed under 25 lbs.",
+      "failure_reasons": [
+        "missing_keep: ['$2,450/mo']"
+      ]
+    },
+    {
+      "id": "re_offer",
+      "ok": false,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "$735k",
+        "$50k"
+      ],
+      "output": "Offer accepted at $735,000, $50,000 earnest deposit, 45-day close, contingent on inspection by June 20.",
+      "failure_reasons": [
+        "missing_keep: ['$735k', '$50k']"
+      ]
+    },
+    {
+      "id": "re_inspection",
+      "ok": true,
+      "word_count": 13,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Roof: 18-22 years old. Panel: 100A (modern requires 200A). HVAC: 2007 installation.",
+      "failure_reasons": []
+    },
+    {
+      "id": "re_property_tax",
+      "ok": false,
+      "word_count": 24,
+      "word_count_ok": false,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "The assessed value for 2026 is $612,300, and the tax rate is 1.18%, resulting in an annual property tax of $7,225.",
+      "failure_reasons": [
+        "words: 24 not in [11,22]"
+      ]
+    },
+    {
+      "id": "logi_shipment",
+      "ok": false,
+      "word_count": 28,
+      "word_count_ok": false,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "LAX",
+        "18:00 CT"
+      ],
+      "output": "Container MSCU-7841092 departed Los Angeles International Airport on May 26. It is scheduled to arrive at Chicago rail yard at 18:00 Central Time on June 2.",
+      "failure_reasons": [
+        "words: 28 not in [13,26]",
+        "missing_keep: ['LAX', '18:00 CT']"
+      ]
+    },
+    {
+      "id": "logi_route_change",
+      "ok": false,
+      "word_count": 23,
+      "word_count_ok": false,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Route order 88340 through the Memphis hub due to the ATL ground stop. This change adds approximately 6 hours, with no additional charge.",
+      "failure_reasons": [
+        "words: 23 not in [12,22]"
+      ]
+    },
+    {
+      "id": "logi_capacity",
+      "ok": true,
+      "word_count": 21,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Truckload rate from DAL to PHX increased by 14% week-over-week. Spot market is tight, planning ahead for 5 days.",
+      "failure_reasons": []
+    },
+    {
+      "id": "logi_customs",
+      "ok": true,
+      "word_count": 18,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "HTS code 8471.30.0100 (laptops). Duty 0%, MPF 0.3464% of value, maximum $538.40 per entry.",
+      "failure_reasons": []
+    },
+    {
+      "id": "logi_flight",
+      "ok": true,
+      "word_count": 19,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Confirmed: UA 857 SFO-NRT, dep May 30 11:35 PT, arrive May 31 16:25 JT, seat 24A.",
+      "failure_reasons": []
+    },
+    {
+      "id": "recipe_pasta",
+      "ok": true,
+      "word_count": 20,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Boil 400g spaghetti in 4L of salted water (3 tbsp salt) for 9 minutes. Reserve 1 cup of pasta water.",
+      "failure_reasons": []
+    },
+    {
+      "id": "recipe_bread",
+      "ok": true,
+      "word_count": 23,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Mix 500g bread flour, 10g salt, 7g instant yeast, and 350ml warm water. Knead for 8 minutes, then let rise for 90 minutes.",
+      "failure_reasons": []
+    },
+    {
+      "id": "recipe_oven",
+      "ok": true,
+      "word_count": 20,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Preheat oven to 425\u00b0F (220\u00b0C). Roast 18-22 minutes, flipping at the 10-minute mark. Rest 5 minutes.",
+      "failure_reasons": []
+    },
+    {
+      "id": "recipe_marinade",
+      "ok": false,
+      "word_count": 23,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [
+        "2 lb",
+        "2 tbsp"
+      ],
+      "output": "Marinate 2 pounds of chicken in 1/4 cup soy sauce, 2 tablespoons ginger, 3 garlic cloves, and lemon juice for 4 hours.",
+      "failure_reasons": [
+        "missing_keep: ['2 lb', '2 tbsp']"
+      ]
+    },
+    {
+      "id": "recipe_yield",
+      "ok": true,
+      "word_count": 16,
+      "word_count_ok": true,
+      "forbidden_hits": [],
+      "missing_keeps": [],
+      "output": "Recipe yields 24 cookies. Serving size 2 cookies. Per serving: 180 calories, 8g fat, 22g carbohydrates.",
+      "failure_reasons": []
+    }
+  ]
+}
