@@ -131,6 +131,10 @@ def main() -> int:
                          "(small, in-distribution); default=no chips (1 combo)")
     ap.add_argument("--limit-seeds", type=int, default=0,
                     help="limit number of seed sources (debug)")
+    ap.add_argument("--no-filter", action="store_true",
+                    help="Disable RSFT filtering — keep every candidate, "
+                         "regardless of score_output. Used as the vanilla-SFT "
+                         "baseline for the no-filter-vs-RSFT ablation.")
     args = ap.parse_args()
 
     if not os.path.exists(QUILL_REWRITE):
@@ -190,7 +194,8 @@ def main() -> int:
                                           adapter=args.adapter)
             n_total += 1
             sc = score_output(case, out)
-            if sc.ok:
+            keep = sc.ok or args.no_filter
+            if keep and out.strip():
                 triple = chatml_triple(instr, source, out)
                 out_f.write(json.dumps(triple, ensure_ascii=False) + "\n")
                 out_f.flush()
