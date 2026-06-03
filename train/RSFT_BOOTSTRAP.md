@@ -1,63 +1,91 @@
-# A $0 self-improving RSFT loop on a 1.5B model
+# A $0 rejection-sampling LoRA loop on a 1.5B model — and where it stops
 
 ## TL;DR
 
-A 35 MB LoRA trained over three generations of rejection-sampling
-self-play on top of Qwen 2.5-1.5B-Instruct produces **+23.3 percentage
-points** of faithful-rewrite pass-rate on a 60-case held-out benchmark
-(70.0% base → 88.3% v2.1 → 93.3% v2.2), with **zero regressions** at
-every step. Total spend: $0. Total wall-clock training: ~16 minutes on
-Colab's free T4. Recipe and code are in this repository.
+A 35 MB LoRA trained by rejection-sampling self-play on top of
+Qwen 2.5-1.5B-Instruct lifts faithful-rewrite pass-rate on a 90-case
+held-out benchmark by **+24.5 percentage points** (64.4% base → 83.3%
+→ 88.9%). Total spend: $0. Training wall-clock: ~8 minutes per
+generation on Colab's free T4.
 
-This is a demo of methodology, not new ML. The interesting part is
-that the loop is *closed* — the eval scorer is the data labeler is the
-production gate. No API calls, no manual labeling, no preference data.
+The sharper finding is the **negative control**. The loop only
+compounds while *new signal* is injected — either genuinely new task
+data, or seeds hand-written to cover the previous generation's
+measured failures. A fourth generation trained on *pure
+self-resampling* (same prompts, sampled from the previous best model,
+no new seeds) **plateaued and mildly regressed** (88.9% → 87.8%, and
+broke strict dominance with 2 new failures). So the thing that drives
+improvement is the failure-targeted seed expansion, not the
+self-sampling. A small model cannot bootstrap itself past what it
+already knows by resampling its own outputs.
+
+This is a methodology demo, not new ML. The interesting parts are
+that the loop is *closed* — the eval scorer is the data labeler is
+the production gate, no API calls or human labels anywhere — and that
+it comes with the experiment that shows the loop's ceiling.
 
 ## What's being measured
 
-50-case in-distribution eval + 60-case held-out test set across 12
+50-case in-distribution eval + 90-case held-out test set across 15
 domains (medical, legal, marketing, customer service, technical docs,
 casual chat, scientific, finance, education, real estate, logistics,
-recipe). Each case has machine-checkable constraints:
+recipe, academic, sports, government/policy). Each case has
+machine-checkable constraints:
 
 - `WORDS`: output word count in `[min_words, max_words]`
 - `FORBID`: none of the forbidden substrings present
 - `KEEP`: every `must_keep` token preserved (semantic match — accepts
   `Sept 9` ≡ `September 9`, `$1.85M` ≡ `$1.85 million`, etc.)
 
-The held-out 60 cases have **zero overlap** with any training-time
-seed file (verified by ID intersection and source-text intersection
-across all 3 RSFT rounds and all 4 seed files).
+The held-out 90 cases have **zero overlap** with any training-time
+seed file — verified by ID intersection *and* source-text intersection
+against all four RSFT rounds and all seed files (the verification is a
+cell in the eval harness, not a claim).
 
 `train/eval/cases.jsonl` — in-distribution 50.
-`train/eval/cases-holdout-60.jsonl` — held-out 60.
+`train/eval/cases-holdout-90.jsonl` — held-out 90.
 `train/eval/run_eval.py` — scorer (harness v2 with semantic matching).
 
 ## The arc
 
 ```
-                              IN-DIST    HELD-OUT 60   Δ vs base
-LFM2.5-1.2B (v1.4.1 baseline)  34.0%     n/a           —
-Qwen 2.5-1.5B BASE             76.0%     70.0%         —
-Qwen + v2.1 LoRA (133 → 551)   98.0%     88.3%        +18.3 pp
-Qwen + v2.2 LoRA (827)         98.0%     93.3%        +23.3 pp
+                              IN-DIST    HELD-OUT 90   Δ vs base   strict-dom
+LFM2.5-1.2B (v1.4.1 baseline)  34.0%     n/a           —           —
+Qwen 2.5-1.5B BASE             76.0%     64.4%         —           —
+Qwen + v2.1 LoRA (551 smp)     98.0%     83.3%        +18.9 pp     +17 / -0  ✓
+Qwen + v2.2 LoRA (827 smp)     98.0%     88.9%        +24.5 pp     + 5 / -0  ✓
+Qwen + v2.3 LoRA (780 smp)     ~98%      87.8%        +23.4 pp     + 1 / -2  ✗
 ```
 
-Honest decomposition:
+`strict-dom` = (cases flipped to pass) / (cases flipped to fail)
+vs the previous generation. v2.1 and v2.2 are strictly dominant —
+every changed case is an improvement. v2.3 is the one that breaks it.
 
-- The first `34.0% → 76.0%` jump was the base-model swap from
-  LFM2.5-1.2B to Qwen 2.5-1.5B-Instruct. Nothing fine-tune-ish.
-- The next `70.0% → 88.3%` on held-out came from training a LoRA on
-  551 self-played samples from the Qwen base. The LoRA flipped 11
-  cases to pass and 0 to fail.
-- The final `88.3% → 93.3%` on held-out came from a second LoRA
-  generation trained on 827 self-played samples sourced from the
-  previous LoRA's outputs plus 10 hand-curated seeds targeting v2.1's
-  specific failure modes. 3 cases flipped to pass, 0 to fail.
+Honest decomposition, generation by generation:
 
-In-distribution pass-rate is identical between v2.1 and v2.2 (49/50),
-so training on v2.1's own outputs didn't overfit damage. The held-out
-lift comes from genuine behavior change on cases the LoRA never saw.
+- **`34.0% → 64.4%`** (in-dist 34→76): the base-model swap from
+  LFM2.5-1.2B to Qwen 2.5-1.5B-Instruct. Nothing fine-tune-ish —
+  just a better base. This is *most* of the headline if you only
+  look at the first and last number, so we call it out explicitly.
+- **`64.4% → 83.3%` (v2.1):** a LoRA trained on 551 self-played
+  samples from the Qwen base. +17 cases flipped to pass, 0 to fail.
+  New signal: the model had never been trained to *prefer* faithful,
+  constrained rewrites; the RSFT data taught that.
+- **`83.3% → 88.9%` (v2.2):** a second LoRA on 827 samples — the
+  previous gen's outputs plus 10 hand-curated seeds targeting v2.1's
+  *measured* failure modes (scientific notation, abbreviation
+  preservation, tight word counts). +5 to pass, 0 to fail. Two of the
+  five wins were in the academic domain, which had no targeted seeds —
+  the behavior generalized.
+- **`88.9% → 87.8%` (v2.3):** the negative control. 780 samples,
+  sampled from v2.2, **no new seeds**. +1 to pass, −2 to fail. It
+  plateaued and slightly regressed. In-distribution stayed flat (~98%),
+  so it didn't *break* — it just had nothing new to learn.
+
+The v2.3 result is the load-bearing one. It rules out "the model
+teaches itself indefinitely" and isolates *what* was doing the
+teaching in v2.1→v2.2: the injection of new signal, not the act of
+self-sampling.
 
 ## The loop (recipe)
 
@@ -133,49 +161,88 @@ flipped to pass in v2.2 on cases the LoRA never saw during training
   labeler. No API for labeling, no preference data, no human
   annotation. Just one Python function that returns `Score(ok=bool)`.
 - The targeted-seeds-per-failure-mode pattern as an explicit
-  iteration recipe. Most RSFT papers scale data uniformly; we show
+  iteration recipe. Most RSFT writeups scale data uniformly; we show
   that 10 hand-curated seeds covering the previous generation's
   actual failures contribute a measurable, traceable pass flip in
-  the next generation.
-- A held-out benchmark across 12 domains and a semantic-aware
+  the next generation — and that *without* them (v2.3), the loop
+  stalls.
+- **The negative control.** A fourth generation trained on pure
+  self-resampling shows the loop does *not* compound on its own. This
+  is the part most "self-improvement" demos skip, and it's the part
+  that makes the positive result interpretable: improvement tracks
+  injected signal, not iteration count.
+- A held-out benchmark across 15 domains and a semantic-aware
   scorer that doesn't punish models for writing `September 9` when
   the must_keep is `Sept 9`.
-- An end-to-end empirical demo on a 1.5B base, three generations,
-  $0, with strict dominance maintained at every step.
+- An end-to-end empirical demo on a 1.5B base, four generations, $0.
+
+### The keep-rate signal predicted the plateau
+
+The fraction of sampled candidates that pass the scorer (the "keep
+rate") climbed each generation, then flattened:
+
+```
+round 1 (from LFM2.5-1.2B base):  33%
+round 2 (from Qwen base):         66%
+round 3 (from Qwen + v2.1):       90%
+round 4 (from Qwen + v2.2):       93%   <- flat
+```
+
+When the keep rate is high, the filter removes almost nothing, so the
+training set is approximately "the model's own greedy output." Training
+on that is close to a no-op plus sampling noise — which is exactly the
+v2.3 result. The keep-rate flattening at round 4 was the leading
+indicator that round 4 would not lift the model.
+
+## What it means
+
+The clean statement of the result:
+
+> On a 1.5B model, a rejection-sampling LoRA loop improves a
+> constraint-checked task **in proportion to the new signal injected
+> each round** — new task data, or seeds covering the previous
+> generation's measured failures. It does **not** improve from pure
+> self-resampling once the model already passes its own filter most
+> of the time. The driver is the failure-targeted seed expansion;
+> the self-sampling is just how the data gets generated.
+
+This is a more useful claim than "self-improvement compounds," because
+it tells you *when to stop*: watch the keep rate. When sampling from
+the current model stops getting filtered (here, ~90%+), another naive
+round won't help. To keep going you need a new source of signal.
 
 ## Honest limitations
 
-- 60 cases is a small held-out set. Headline `93.3%` has ~6% standard
-  error at p = 0.5. A larger benchmark would tighten this; we haven't
-  built one yet.
+- 90 cases is still a modest held-out set. Headline `88.9%` has ~3.3%
+  standard error at p = 0.5. Bigger is better; this is where it stopped.
 - All eval cases were written by one person (me, working through
-  Claude). Held-out vs in-distribution overlap is zero by file, but
-  domain coverage and constraint patterns share a stylistic ancestor.
+  Claude). Held-out vs training overlap is zero by file, but domain
+  coverage and constraint patterns share a stylistic ancestor.
 - The model only sees one inference temperature (greedy) at eval
   time. Real-world deployment with sampling will look different.
 - We have not compared against larger bases (Qwen 3B, 7B) on the same
-  benchmark. The claim is *about* this loop on a small base, not
-  about absolute capability.
+  benchmark. The claim is *about* this loop on a small base, not about
+  absolute capability — and the v2.3 plateau may move on a bigger base
+  with more headroom.
+- One ablation is still open: a vanilla-SFT control (train on the same
+  827 samples with the RSFT filter *off*) to isolate how much the
+  filter contributes vs. raw teacher distillation at this generation.
+  The dataset for it is in the repo (`rsft-ablation-nofilter.jsonl`);
+  the run is pending.
 
-## Open question for v2.3
+## Where the signal would come from next
 
-Does the loop keep compounding, or is `93.3%` near the data ceiling
-for this benchmark on this base?
+To push past the v2.2 plateau, in rough order of expected payoff:
 
-Two specific bets to settle it:
-1. **Bootstrap-only round 4** (in flight in this repo's
-   `rsft-round4-bootstrap.jsonl`): sample 70 seeds × 12 candidates
-   from v2.2, no new targeted seeds. If the resulting v2.3 still
-   improves over v2.2 on held-out 60, the *loop itself* lifts
-   quality. If it plateaus, new targeted seeds (or new signal —
-   preference data, different base size) are required.
-2. **Larger base swap** at the v2.2 quality level. Take the v2.2
-   recipe (same seeds, same dataset, same training hyperparams) and
-   run it on Qwen 2.5-3B or 7B. Tells us whether the recipe is
-   transferable up the model size curve.
-
-The first will be answered in this repo within the week. The second
-needs more compute than free Colab provides for the 7B class.
+1. **More targeted seeds** covering v2.2's remaining failure cluster
+   (scientific notation `n=`/`p<`, dense numeric reports, IATA-style
+   codes). This is the cheapest lever and the one with a track record
+   here.
+2. **A larger base** (Qwen 2.5-3B / 7B) run through the identical
+   recipe — tests whether the ceiling is the loop or the base. Needs
+   more than free-tier Colab for the 7B class.
+3. **A different signal type** (preference pairs / DPO over the
+   constraint score) once exact-match RSFT saturates.
 
 ## Reproduce it
 
