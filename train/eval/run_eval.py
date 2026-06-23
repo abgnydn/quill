@@ -82,11 +82,12 @@ def run_model(
     instruction: str | None,
     *,
     adapter_path: str | None = None,
+    binary: str = NIB_REWRITE,
 ) -> str:
     """Single-shot generation via Nib's own nib-rewrite binary.
     Same engine as the running app — eval matches user experience.
     """
-    cmd = [NIB_REWRITE, "-m", model_path, "-t", source]
+    cmd = [binary, "-m", model_path, "-t", source]
     if instruction:
         cmd += ["-i", instruction]
     if adapter_path:
@@ -118,6 +119,8 @@ class Score:
     missing_keeps: list[str] = field(default_factory=list)
     output: str = ""
     failure_reasons: list[str] = field(default_factory=list)
+    # Optional LLM-judge result (see judge.py); None unless --judge is set.
+    judge: dict[str, Any] | None = None
 
 
 WORD_RE = re.compile(r"\w+", re.UNICODE)
@@ -267,7 +270,16 @@ def main() -> int:
     ap.add_argument("--label", default="run", help="Human-readable label for report")
     ap.add_argument("--limit", type=int, default=0, help="Run only first N cases (debug)")
     ap.add_argument("--verbose", action="store_true", help="Print each output")
+    ap.add_argument("--binary", default=None,
+                    help=f"Path to the nib-rewrite binary (default: {NIB_REWRITE})")
+    ap.add_argument("--judge", action="store_true",
+                    help="Also score each rewrite with the Claude LLM-judge "
+                         "(needs ANTHROPIC_API_KEY + `pip install anthropic`)")
+    ap.add_argument("--judge-model", default=None,
+                    help="Judge model id (default: claude-opus-4-8)")
     args = ap.parse_args()
+
+    binary = args.binary or NIB_REWRITE
 
     if not os.path.exists(args.model):
         print(f"model not found: {args.model}", file=sys.stderr)
@@ -275,8 +287,8 @@ def main() -> int:
     if args.adapter and not os.path.exists(args.adapter):
         print(f"adapter not found: {args.adapter}", file=sys.stderr)
         return 2
-    if not os.path.exists(NIB_REWRITE):
-        print(f"nib-rewrite not found: {NIB_REWRITE}\n"
+    if not os.path.exists(binary):
+        print(f"nib-rewrite not found: {binary}\n"
               f"Build it with: cd ~/quill/shell/src-tauri && "
               f"cargo build --release --features llm --bin nib-rewrite",
               file=sys.stderr)
@@ -285,6 +297,16 @@ def main() -> int:
     cases = [json.loads(l) for l in open(args.cases) if l.strip()]
     if args.limit:
         cases = cases[: args.limit]
+
+    # LLM-judge setup (lazy: only import/connect when --judge is on).
+    judge_mod = None
+    judge_client = None
+    judge_model = None
+    if args.judge:
+        import judge as judge_mod  # same dir; on sys.path when run as a script
+        judge_model = args.judge_model or judge_mod.DEFAULT_JUDGE_MODEL
+        judge_client = judge_mod.make_client()
+        print(f"[eval] judge={judge_model}", file=sys.stderr)
 
     print(f"[eval] model={args.model}", file=sys.stderr)
     if args.adapter:
@@ -296,14 +318,26 @@ def main() -> int:
     for i, case in enumerate(cases):
         instr = compose_instruction(case.get("tone"), case.get("formality"))
         t_case = time.time()
-        out = run_model(args.model, case["source"], instr, adapter_path=args.adapter)
+        out = run_model(args.model, case["source"], instr, adapter_path=args.adapter, binary=binary)
         dt = time.time() - t_case
         sc = score_output(case, out)
+        if args.judge:
+            sc.judge = judge_mod.judge_rewrite(
+                case["source"], out, instr, client=judge_client, model=judge_model,
+            )
         scores.append(sc)
         mark = "✓" if sc.ok else "✗"
+        judge_tag = ""
+        if sc.judge:
+            if "error" in sc.judge:
+                judge_tag = f"  judge=ERR({sc.judge['error'][:24]})"
+            else:
+                axes = ("grammaticality", "faithfulness", "improvement", "fluency")
+                avg = sum(sc.judge.get(a, 0) for a in axes) / len(axes)
+                judge_tag = f"  judge={avg:.2f} {sc.judge.get('verdict', '?')}"
         print(
             f"[{i+1:2}/{len(cases)}] {mark} {sc.id:32} "
-            f"words={sc.word_count:3} ({dt:.1f}s)",
+            f"words={sc.word_count:3} ({dt:.1f}s){judge_tag}",
             file=sys.stderr,
         )
         if not sc.ok:
@@ -328,6 +362,9 @@ def main() -> int:
         "scores": [asdict(s) for s in scores],
     }
 
+    if args.judge:
+        report["judge"] = judge_mod.summarize_judgments([s.judge for s in scores])
+
     if args.out:
         Path(args.out).write_text(json.dumps(report, indent=2))
         print(f"[eval] wrote {args.out}", file=sys.stderr)
@@ -336,6 +373,17 @@ def main() -> int:
         f"\n{args.label}: {pass_n}/{len(scores)} pass ({pass_rate:.1f}%)  "
         f"avg_words={report['avg_words']}  total={dt_total:.1f}s"
     )
+    if args.judge:
+        j = report["judge"]
+        if j.get("n_judged"):
+            v = j.get("verdicts", {})
+            print(
+                f"{args.label}: judge overall={j.get('mean_overall')}/5  "
+                f"(gram={j.get('mean_grammaticality')} faith={j.get('mean_faithfulness')} "
+                f"impr={j.get('mean_improvement')} flu={j.get('mean_fluency')})  "
+                f"verdict better/same/worse={v.get('better')}/{v.get('same')}/{v.get('worse')}  "
+                f"win_rate={j.get('win_rate')}%  (judged {j['n_judged']}, errors {j.get('n_errors', 0)})"
+            )
     return 0
 
 

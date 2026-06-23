@@ -15,6 +15,9 @@ dependencies = [
     "sacrebleu>=2.4",
     "numpy>=2.0",
     "pyyaml>=6.0",
+    # LLM-judge for eval/run_eval.py --judge (and eval/modal_eval.py). A recent
+    # version is best (structured outputs); the judge degrades gracefully on older.
+    "anthropic>=0.40",
     # Linux/Windows-only — unsloth needs Triton (no macOS support yet).
     # Mac users: prep + eval still work locally; run train.py on Colab T4 instead.
     "unsloth>=2025.10; sys_platform != 'darwin'",
