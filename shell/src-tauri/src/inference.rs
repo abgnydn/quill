@@ -324,7 +324,7 @@ impl RewriteEngine {
                 .model
                 .token_to_piece(token, &mut decoder, true, None)
                 .context("token_to_piece")?;
-            if piece.contains("<end_of_turn>") {
+            if piece.contains(STOP_MARKER) {
                 break;
             }
             out.push_str(&piece);
@@ -335,6 +335,6 @@ impl RewriteEngine {
             n_cur += 1;
         }
 
-        Ok(out.replace("<end_of_turn>", "").trim().to_string())
+        Ok(out.replace(STOP_MARKER, "").trim().to_string())
     }
 }

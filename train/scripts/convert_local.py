@@ -1,3 +1,7 @@
+# ─── LEGACY (Gemma 3 270M / CoEdIT era) — NOT the current pipeline ───────────
+# Qwen RSFT adapters are converted inside train/colab/train_nib_v2.ipynb. See
+# RSFT_BOOTSTRAP.md. Kept for reference only.
+# ─────────────────────────────────────────────────────────────────────────────
 """Convert a LoRA checkpoint to a quantized GGUF — entirely on your Mac.
 
 Merges the LoRA into base Gemma 3 270M via transformers+peft, then drives

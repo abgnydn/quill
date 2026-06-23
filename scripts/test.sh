@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Quill — run the entire automated test suite.
 #
-#   - Rust:   `cargo test --features llm,overlay --lib`        (17 tests)
-#   - Python: AST-parse every train/ script                    (8 files)
+#   - Rust:   `cargo test --features llm,overlay --lib`   (~64 tests, +2 ignored, macOS)
+#   - Python: AST-parse every train/ script               (all train/**/*.py)
 #   - Optional: `--with-model` runs the gated full-model test
 #               (requires QUILL_TEST_MODEL=path/to/.gguf set).
 #

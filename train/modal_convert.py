@@ -1,3 +1,8 @@
+# ─── LEGACY (Gemma 3 270M / CoEdIT era) — NOT the current pipeline ───────────
+# Salvage utility for the old Gemma Modal run. Nib v2.x trains a Qwen RSFT LoRA
+# (RSFT_BOOTSTRAP.md) and converts via the Colab notebook's llama.cpp cells.
+# Kept for reference only.
+# ─────────────────────────────────────────────────────────────────────────────
 """Salvage: convert an already-trained LoRA checkpoint in the quill-artifacts
 Modal volume into a quantized GGUF. CPU-only — no GPU contention, costs cents.
 

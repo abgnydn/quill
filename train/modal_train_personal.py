@@ -1,3 +1,12 @@
+# ─── LEGACY + KNOWN MISMATCH — read before relying on this ───────────────────
+# The Rust app's Modal personal-training FALLBACK (shell .../training.rs::start)
+# still shells out to this script, but it trains a *Gemma 3 270M* adapter that
+# will NOT load on the shipping LFM2.5-350M / Qwen 2.5-1.5B bases (different
+# architectures + LoRA shapes). The supported personal-training path is now
+# LOCAL QVAC (shell .../training_local.rs, base-model-agnostic, free, on-device);
+# the scheduler prefers it whenever the QVAC binaries are bundled. Treat this
+# Modal path as unmaintained until it's rebased onto the v2.x models.
+# ─────────────────────────────────────────────────────────────────────────────
 """Personal LoRA fine-tune on top of Quill's CoEdIT-merged base model.
 
 Takes a user journal exported from Quill's "⤓ Export" button (CoEdIT-style

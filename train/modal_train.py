@@ -1,3 +1,8 @@
+# ─── LEGACY (Gemma 3 270M / CoEdIT era) — NOT the current pipeline ───────────
+# Nib v2.x ships LFM2.5-350M (default) + Qwen 2.5-1.5B + RSFT LoRA (premium).
+# The live training path is the rejection-sampling loop in RSFT_BOOTSTRAP.md,
+# run via train/colab/train_nib_v2.ipynb on Qwen. Kept for reference only.
+# ─────────────────────────────────────────────────────────────────────────────
 """Train Gemma 3 270M LoRA on CoEdIT on a Modal L4, end-to-end.
 
 Why this instead of Colab:

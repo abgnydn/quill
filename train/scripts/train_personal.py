@@ -1,3 +1,8 @@
+# ─── LEGACY / SUPERSEDED — v0.5-phase-1 skeleton, never finished ─────────────
+# Personal-adapter training now runs in-app: LOCAL QVAC (on-device, free) via
+# shell .../training_local.rs, or the Modal fallback. This standalone Gemma
+# skeleton is not runnable end-to-end. Kept for reference only.
+# ─────────────────────────────────────────────────────────────────────────────
 """Train a per-user LoRA adapter on top of the existing CoEdIT-trained model.
 
 INPUT:  ~/Library/Application Support/Quill/journal.jsonl  (exported via the

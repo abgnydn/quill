@@ -1,3 +1,7 @@
+# ─── LEGACY (CoEdIT era) — not used by the v2.x RSFT pipeline ────────────────
+# Nib v2.x trains on hand-curated seeds + self-sampled RSFT data (train/data/,
+# train/eval/), not raw CoEdIT. See RSFT_BOOTSTRAP.md. Kept for reference.
+# ─────────────────────────────────────────────────────────────────────────────
 """Download CoEdIT and inspect it. CoEdIT rows are already instruction-style:
 each row has `src` (an editing instruction + source text) and `tgt` (the edited text).
 

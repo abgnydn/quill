@@ -1,7 +1,7 @@
 [project]
 name = "quill-train"
 version = "0.1.0"
-description = "Fine-tune Gemma 3 270M on CoEdIT for local grammar correction"
+description = "Nib training pipeline — RSFT LoRA on Qwen 2.5-1.5B (current; see RSFT_BOOTSTRAP.md) plus legacy Gemma 3 270M / CoEdIT scripts"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "torch>=2.5",

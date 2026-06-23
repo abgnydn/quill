@@ -1,3 +1,8 @@
+# ─── LEGACY (Gemma 3 270M / CoEdIT era) — NOT the current pipeline ───────────
+# The Qwen RSFT adapters are exported as f16 GGUF by llama.cpp's
+# convert_lora_to_gguf.py inside train/colab/train_nib_v2.ipynb. See
+# RSFT_BOOTSTRAP.md. Kept for reference (the --base default is still Gemma).
+# ─────────────────────────────────────────────────────────────────────────────
 """Export the fine-tuned Gemma 3 270M LoRA adapter to a quantized GGUF for
 llama.cpp / candle / llama-cpp-rs consumption in `~/quill/shell/`.
 
