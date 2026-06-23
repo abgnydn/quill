@@ -1,15 +1,5 @@
 name: CI
 
-# Two jobs, split by what actually needs which OS:
-#   • linux        — the bulk of the suite. The non-overlay Rust tests (the
-#                    AXUI/AppKit overlay modules are cfg'd out off-macOS), plus
-#                    the Python / JS / shell checks. Cheap and fast. NO Mac.
-#   • macos-overlay — the ONLY job that needs macOS: the only place the
-#                    Accessibility/AppKit overlay code (objc2 + AXUI,
-#                    target_os = "macos") compiles. Delete this job if you don't
-#                    want to spend macOS minutes — the overlay is still tested
-#                    locally on the author's Mac via ./scripts/test.sh.
-
 on:
   push:
     branches: [master, "claude/**"]
@@ -29,44 +19,36 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: shell/src-tauri
-
-      # nib_lib links Tauri, which needs WebKitGTK to compile/link on Linux —
-      # even though nib-rewrite never opens a window. (cmake/build-essential are
-      # preinstalled on ubuntu-latest; webkit is not.)
       - name: Install Tauri Linux build deps
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
             libjavascriptcoregtk-4.1-dev cmake build-essential pkg-config libssl-dev
-
-      # --features llm builds llama.cpp; --features overlay is intentionally
-      # omitted (macOS-only). Runs ~45 of the ~64 lib tests.
+      # The ~219 MB model GGUF ships at release, not in git, but Tauri's build
+      # script validates every bundle.resources path exists. Stub it so the lib
+      # compiles (no test loads the real model).
+      - name: Stub bundled model resource
+        run: touch shell/src-tauri/resources/lfm2.5-350m-q4_k_m.gguf
       - name: Rust tests (llm; overlay is macOS-only)
         working-directory: shell/src-tauri
         run: cargo test --features llm --lib
-
       - name: Python — AST-parse every train/ script
         run: |
-          n=0
           for f in $(find train -maxdepth 2 -name '*.py' | sort); do
             python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$f"
-            n=$((n+1))
           done
-          echo "ok: $n python files parsed"
-
       - name: JS — node --check
         run: |
           node --check shell/src/main.js
           node --check shell/src/overlay.js
-
       - name: Shell — bash -n
         run: |
           for f in scripts/*.sh; do bash -n "$f"; done
 
   macos-overlay:
     name: macos (full suite incl. AXUI overlay)
-    runs-on: macos-14 # Apple Silicon
+    runs-on: macos-14
     defaults:
       run:
         shell: bash
@@ -76,13 +58,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: shell/src-tauri
-
       - name: Ensure cmake (for llama-cpp-2)
         run: cmake --version || brew install cmake
-
-      # The full suite — this is the only place the overlay (objc2 + AXUI)
-      # compiles. The 2 ignored AXUI integration tests stay skipped (no TCC
-      # grant on a CI runner); the ~21 pure-logic overlay tests run headless.
+      - name: Stub bundled model resource
+        run: touch shell/src-tauri/resources/lfm2.5-350m-q4_k_m.gguf
       - name: Rust tests (llm + overlay)
         working-directory: shell/src-tauri
         run: cargo test --features llm,overlay --lib
