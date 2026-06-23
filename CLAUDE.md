@@ -112,7 +112,12 @@ The arc, oldest → newest:
   then a negative-control 4th generation plateaus (87.8%) — proving the loop
   only compounds with new injected signal, not pure self-resampling.
 - ✅ Tests green via `./scripts/test.sh` (~64 Rust + 2 ignored, Python AST,
-  JS `--check`).
+  JS `--check`). The same checks run in CI on every push/PR
+  (`.github/workflows/ci.yml`): a **linux** job for the non-overlay Rust suite
+  (`--features llm`) plus the Python/JS/shell checks, and a **macos** job for the
+  full `--features llm,overlay` suite (the AXUI overlay only compiles on macOS).
+  Both stub the unbundled model GGUF (`touch resources/lfm2.5-350m-q4_k_m.gguf`)
+  so Tauri's resource-path check passes.
 
 ## 🎯 Resume here (on "continue")
 
@@ -127,6 +132,8 @@ is the current *direction*, not the current commit.
    `./scripts/install-dev.sh --build` (first build on a fresh machine also
    `cmake --build`s QVAC into `~/.cache/qvac/`, ~5 min one-time).
 2. **Run tests:** `./scripts/test.sh` — ~64 + 2 ignored. A drop is a regression.
+   (CI re-runs these on every push via `.github/workflows/ci.yml`: linux for the
+   non-overlay suite + py/js/sh, macos for the overlay.)
 3. **Open threads, roughly in priority order:**
    - **Rebase or retire the Modal personal-training path.**
      `modal_train_personal.py` still trains a *Gemma* adapter that won't load on
