@@ -11,7 +11,7 @@ Run (after `modal volume get` has pulled the adapter to ./checkpoints/):
 
     HF_TOKEN=hf_xxx .venv/bin/python scripts/convert_local.py \\
         --checkpoint ./checkpoints/checkpoint-1200 \\
-        --out        ./checkpoints/quill-q4_k_m.gguf
+        --out        ./checkpoints/nib-q4_k_m.gguf
 
 Prereqs (verified at runtime; the script will tell you what's missing):
     - cmake + C++ toolchain (Xcode CLT on macOS — you already have these
@@ -48,7 +48,7 @@ def step(msg: str) -> float:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--checkpoint", required=True, help="LoRA adapter dir (must contain adapter_model.safetensors + adapter_config.json)")
-    ap.add_argument("--out", required=True, help="Output .gguf path (e.g. ./checkpoints/quill-q4_k_m.gguf)")
+    ap.add_argument("--out", required=True, help="Output .gguf path (e.g. ./checkpoints/nib-q4_k_m.gguf)")
     ap.add_argument("--base", default="google/gemma-3-270m-it", help="Base model on HF (gated — needs HF_TOKEN)")
     ap.add_argument("--quant", default="q4_k_m", choices=["q4_k_m", "q5_k_m", "q8_0", "f16"])
     ap.add_argument("--llama-cpp-dir", default=str(Path.home() / ".cache" / "llama.cpp"),
@@ -129,7 +129,7 @@ def main() -> None:
     print(f"  done ({time.time() - t:.1f}s)", flush=True)
 
     # ---- 4. Convert HF → GGUF f16 -------------------------------------------
-    f16_gguf = out_path.with_name("quill-f16.gguf")
+    f16_gguf = out_path.with_name("nib-f16.gguf")
     t = step(f"converting HF → GGUF f16 → {f16_gguf}")
     subprocess.run(
         [sys.executable, str(llama_dir / "convert_hf_to_gguf.py"),
@@ -141,7 +141,7 @@ def main() -> None:
 
     if args.quant == "f16":
         f16_gguf.rename(out_path)
-        print(f"\n[quill] DONE  {out_path}  ({out_path.stat().st_size / (1024 * 1024):.1f} MB)")
+        print(f"\n[nib] DONE  {out_path}  ({out_path.stat().st_size / (1024 * 1024):.1f} MB)")
         return
 
     # ---- 5. Build llama-quantize (cached) -----------------------------------
@@ -172,7 +172,7 @@ def main() -> None:
         check=True,
     )
     size_mb = out_path.stat().st_size / (1024 * 1024)
-    print(f"\n[quill] DONE  {out_path}  ({size_mb:.1f} MB, {args.quant})  total {time.time() - t:.1f}s for quantize step", flush=True)
+    print(f"\n[nib] DONE  {out_path}  ({size_mb:.1f} MB, {args.quant})  total {time.time() - t:.1f}s for quantize step", flush=True)
 
 
 if __name__ == "__main__":

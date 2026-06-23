@@ -1,10 +1,10 @@
 //! Shared cache of the AXUI element currently engaged by the focus tracker.
 //!
 //! Problem: when the user clicks a suggestion in our overlay popover, the
-//! click activates Quill's own app and shifts AXUI focus away from the
+//! click activates Nib's own app and shifts AXUI focus away from the
 //! writing app. By the time `apply::apply()` re-queries
 //! `kAXFocusedApplicationAttribute`, the answer is "app.nib" — so the
-//! AXUI text-write hits Quill's WKWebView (no-op) instead of the user's
+//! AXUI text-write hits Nib's WKWebView (no-op) instead of the user's
 //! text field.
 //!
 //! Fix: `focus_tracker` writes the most recently engaged element handle
@@ -67,7 +67,7 @@ pub fn current_handle() -> Option<*mut c_void> {
 }
 
 /// Clear the cache. Equivalent to `store(null)`. Useful when the user
-/// pauses Quill or the engagement filter rejects the focused app.
+/// pauses Nib or the engagement filter rejects the focused app.
 pub fn clear() {
     let mut g = match LAST_ENGAGED.lock() {
         Ok(g) => g,

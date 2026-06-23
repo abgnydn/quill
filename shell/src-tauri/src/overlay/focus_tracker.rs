@@ -95,7 +95,7 @@ pub struct SelectionEvent {
 /// status to stderr.
 pub fn spawn(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
     thread::Builder::new()
-        .name("quill-focus-tracker".into())
+        .name("nib-focus-tracker".into())
         .spawn(move || run(app, config))
         .expect("spawn focus-tracker thread");
 }
@@ -114,17 +114,17 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
     // each call (unlike AXIsProcessTrusted, which caches per-process).
     if !is_trusted(true) {
         eprintln!(
-            "[quill] Accessibility permission NOT granted. \
-             System Settings → Privacy & Security → Accessibility — toggle Quill on."
+            "[nib] Accessibility permission NOT granted. \
+             System Settings → Privacy & Security → Accessibility — toggle Nib on."
         );
         // Poll every 2s using the fresh-read variant — picks up the grant
         // without requiring a relaunch.
         while !is_trusted(false) {
             thread::sleep(Duration::from_secs(2));
         }
-        eprintln!("[quill] Accessibility permission granted; focus tracker starting");
+        eprintln!("[nib] Accessibility permission granted; focus tracker starting");
     } else {
-        eprintln!("[quill] AXUI trusted; focus tracker starting");
+        eprintln!("[nib] AXUI trusted; focus tracker starting");
     }
 
     let system_wide = unsafe { AXUIElementCreateSystemWide() };
@@ -140,12 +140,12 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
         thread::sleep(Duration::from_millis(150));
         tick = tick.wrapping_add(1);
 
-        // Pause short-circuit — when the user toggled Quill paused (via tray
+        // Pause short-circuit — when the user toggled Nib paused (via tray
         // or settings), we skip every AXUI read.
         let cfg = config.snapshot();
         if cfg.is_paused_now() {
             if last_paused_state != Some(true) {
-                eprintln!("[quill] paused — overlay silent until resumed");
+                eprintln!("[nib] paused — overlay silent until resumed");
                 last_paused_state = Some(true);
                 last_bounds = None;
                 last_text_hash = 0;
@@ -159,7 +159,7 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
             }
             continue;
         } else if last_paused_state == Some(true) {
-            eprintln!("[quill] resumed");
+            eprintln!("[nib] resumed");
             last_paused_state = Some(false);
         }
 
@@ -177,7 +177,7 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
         if let SnapshotResult::Skip(ctx) = &snapshot {
             if last_skip.as_ref() != Some(ctx) {
                 eprintln!(
-                    "[quill] focus skipped: bundle={:?} role={:?} subrole={:?} role_desc={:?}",
+                    "[nib] focus skipped: bundle={:?} role={:?} subrole={:?} role_desc={:?}",
                     ctx.bundle_id, ctx.role, ctx.subrole, ctx.role_description
                 );
                 last_skip = Some(ctx.clone());
@@ -236,7 +236,7 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
 
         if !bounds_changed && !text_changed {
             if tick % 60 == 0 {
-                eprintln!("[quill] focus-tracker heartbeat (no change in 9s)");
+                eprintln!("[nib] focus-tracker heartbeat (no change in 9s)");
             }
             // Still need to release / store the elem_ref. If we just
             // CFRelease via the cache, the focus-update path that owns
@@ -282,7 +282,7 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
 
         let rects_resolved = lints.iter().filter(|l| l.rect.is_some()).count();
         eprintln!(
-            "[quill] focus-update: bounds={} text_len={} lints={} rects={}/{}",
+            "[nib] focus-update: bounds={} text_len={} lints={} rects={}/{}",
             bounds
                 .as_ref()
                 .map(|b| format!("x={:.0} y={:.0} w={:.0} h={:.0}", b.x, b.y, b.w, b.h))
@@ -299,7 +299,7 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
             lints,
         };
         if let Err(e) = app.emit_to(OVERLAY_LABEL, "focus-update", &payload) {
-            eprintln!("[quill] emit_to overlay failed: {e}");
+            eprintln!("[nib] emit_to overlay failed: {e}");
         }
         let _ = app.emit("focus-update", &payload);
 

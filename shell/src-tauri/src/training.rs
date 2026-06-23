@@ -1,8 +1,8 @@
 //! In-app personal LoRA training trigger.
 //!
-//! Spawns `modal run modal_train_personal.py` as a subprocess from the Quill
+//! Spawns `modal run modal_train_personal.py` as a subprocess from the Nib
 //! main window, polls its progress, and on success copies the resulting
-//! `personal-adapter.gguf` into the spot Quill auto-detects at startup.
+//! `personal-adapter.gguf` into the spot Nib auto-detects at startup.
 //!
 //! Why subprocess rather than calling Modal's Python API directly: Modal's
 //! orchestration is its CLI tool; replicating that from Rust is far more
@@ -34,7 +34,7 @@ pub struct TrainingStatus {
     /// "trained in X min", etc.).
     pub stage: Option<String>,
     pub error: Option<String>,
-    /// Set when state == Succeeded — the local path Quill will install from.
+    /// Set when state == Succeeded — the local path Nib will install from.
     pub output_adapter: Option<String>,
     /// Which backend ran this job — UI surfaces "local (free)" vs "Modal ($0.20)".
     pub backend: Backend,
@@ -122,7 +122,7 @@ impl std::fmt::Display for StartError {
             Self::AlreadyRunning => write!(f, "a training job is already running"),
             Self::NoHfToken => write!(
                 f,
-                "HF_TOKEN env var not set — launch Quill from a terminal with `export HF_TOKEN=hf_...`"
+                "HF_TOKEN env var not set — launch Nib from a terminal with `export HF_TOKEN=hf_...`"
             ),
             Self::ModalNotFound(p) => write!(f, "modal CLI not found at {p}"),
             Self::TrainDirMissing(p) => write!(f, "train dir missing: {}", p.display()),
@@ -249,7 +249,7 @@ impl TrainingState {
             .ok_or_else(|| StartError::ModalNotFound(format!("{}/.venv/bin/modal or in PATH", train_dir.display())))?;
 
         eprintln!(
-            "[quill][train] spawning {} run modal_train_personal.py --journal {}",
+            "[nib][train] spawning {} run modal_train_personal.py --journal {}",
             modal_bin.display(),
             journal_path.display()
         );
@@ -317,7 +317,7 @@ impl TrainingState {
         Ok(())
     }
 
-    /// Copy a previously-trained adapter into Quill's Application Support
+    /// Copy a previously-trained adapter into Nib's Application Support
     /// dir so it's auto-detected on the next launch. When the local
     /// backend wrote the adapter directly to `dest` (we pass it via
     /// `--output-adapter`), the copy is a no-op and we just return the
@@ -372,7 +372,7 @@ fn drain_stage(child: &mut Child) -> Option<String> {
         child.stdout = Some(out);
     }
     buf.lines()
-        .filter(|l| l.contains("[quill") || l.contains("trained in") || l.contains("MB"))
+        .filter(|l| l.contains("[nib") || l.contains("trained in") || l.contains("MB"))
         .last()
         .map(|s| s.trim().to_string())
 }
@@ -396,7 +396,7 @@ mod tests {
         let saved = std::env::var("HF_TOKEN").ok();
         unsafe { std::env::remove_var("HF_TOKEN"); }
         let s = TrainingState::default();
-        let r = s.start(PathBuf::from("/tmp/quill-journal.jsonl"));
+        let r = s.start(PathBuf::from("/tmp/nib-journal.jsonl"));
         match r {
             Err(StartError::NoHfToken) => {}
             other => panic!("expected NoHfToken, got {other:?}"),
@@ -425,7 +425,7 @@ mod tests {
     #[test]
     fn install_errors_when_no_adapter() {
         let s = TrainingState::default();
-        let r = s.install(&PathBuf::from("/tmp/quill-dst.gguf"));
+        let r = s.install(&PathBuf::from("/tmp/nib-dst.gguf"));
         assert!(r.is_err(), "should error when no job has produced an adapter");
     }
 

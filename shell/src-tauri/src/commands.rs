@@ -46,7 +46,7 @@ pub fn capabilities(
 #[tauri::command]
 pub fn overlay_ping(stage: &str, count: u32, detail: Option<String>) {
     eprintln!(
-        "[quill][overlay-js] {stage} count={count}{}",
+        "[nib][overlay-js] {stage} count={count}{}",
         detail.map(|d| format!(" {d}")).unwrap_or_default()
     );
 }
@@ -122,7 +122,7 @@ pub fn apply_suggestion(
 }
 
 /// Record an event without going through AXUI write-back. Used by the
-/// main Quill window — it mutates its own textarea via plain JS and just
+/// main Nib window — it mutates its own textarea via plain JS and just
 /// wants to be counted in the personalization journal.
 #[tauri::command]
 pub fn journal_log(
@@ -184,7 +184,7 @@ pub fn train_personal_start(
 ) -> Result<TrainingStatus, String> {
     // 1. Export the current journal to a fresh temp file.
     let tmp = std::env::temp_dir().join(format!(
-        "quill-training-{}.jsonl",
+        "nib-training-{}.jsonl",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
@@ -196,7 +196,7 @@ pub fn train_personal_start(
             "only {n} applied edits in the journal — need ≥10 before training is useful"
         ));
     }
-    eprintln!("[quill][train] exported {n} pairs to {}", tmp.display());
+    eprintln!("[nib][train] exported {n} pairs to {}", tmp.display());
 
     // Local backend (QVAC + bundled base model) is preferred — free, ~5
     // min on Metal vs ~15 min + $0.20 on Modal. Fall back to Modal only
@@ -211,7 +211,7 @@ pub fn train_personal_start(
             .start_local(finetune, base, tmp, out)
             .map_err(|e| e.to_string())?;
     } else {
-        eprintln!("[quill][train] local backend not ready, falling back to Modal");
+        eprintln!("[nib][train] local backend not ready, falling back to Modal");
         training.start(tmp).map_err(|e| e.to_string())?;
     }
     Ok(training.status())
@@ -222,14 +222,14 @@ pub fn train_personal_status(training: State<'_, SharedTraining>) -> TrainingSta
     training.status()
 }
 
-/// Copy a successfully-produced adapter into Quill's Application Support
-/// dir. Quill auto-loads it on next launch.
+/// Copy a successfully-produced adapter into Nib's Application Support
+/// dir. Nib auto-loads it on next launch.
 #[tauri::command]
 pub fn train_personal_install(training: State<'_, SharedTraining>) -> Result<String, String> {
     let dest = crate::state::personal_adapter_path()
         .ok_or_else(|| "HOME not resolvable".to_string())?;
     let bytes = training.install(&dest)?;
-    eprintln!("[quill][train] installed {bytes}B → {}", dest.display());
+    eprintln!("[nib][train] installed {bytes}B → {}", dest.display());
     Ok(dest.display().to_string())
 }
 
@@ -561,7 +561,7 @@ pub fn rewrite(
                 Ok(result)
             }
             None => Err(
-                "no model loaded — set QUILL_MODEL=<path-to.gguf> before launching".into(),
+                "no model loaded — set NIB_MODEL=<path-to.gguf> before launching".into(),
             ),
         }
     }
@@ -596,7 +596,7 @@ pub fn rewrite_variants(
                 .rewrite_variants(text, instruction.as_deref(), n)
                 .map_err(|e| format!("{e:#}")),
             None => Err(
-                "no model loaded — set QUILL_MODEL=<path-to.gguf> before launching".into(),
+                "no model loaded — set NIB_MODEL=<path-to.gguf> before launching".into(),
             ),
         }
     }

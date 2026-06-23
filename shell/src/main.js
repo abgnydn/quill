@@ -135,7 +135,7 @@ async function probeCapabilities() {
       rewriteHint.textContent = "";
     } else if (c.llm_built && !c.model_loaded) {
       label = "harper + llm (no model)";
-      rewriteHint.textContent = "set QUILL_MODEL to your .gguf and relaunch";
+      rewriteHint.textContent = "set NIB_MODEL to your .gguf and relaunch";
     } else {
       rewriteHint.textContent = "rebuild with --features llm to enable";
     }
@@ -483,9 +483,9 @@ async function refreshPersonal() {
 
 personalExport.addEventListener("click", async () => {
   const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const out = `~/Downloads/quill-training-${ts}.jsonl`.replace(/^~/, `${(await invoke("capabilities"))?.home ?? ""}`);
+  const out = `~/Downloads/nib-training-${ts}.jsonl`.replace(/^~/, `${(await invoke("capabilities"))?.home ?? ""}`);
   // We can't read $HOME from JS — let Rust resolve it. Pass an absolute path.
-  const path = `/tmp/quill-training-${ts}.jsonl`;
+  const path = `/tmp/nib-training-${ts}.jsonl`;
   try {
     const n = await invoke("journal_export", { outPath: path });
     personalExport.textContent = `✓ ${n} pairs → ${path}`;

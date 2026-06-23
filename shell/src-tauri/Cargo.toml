@@ -1,13 +1,13 @@
 [package]
-name = "quill"
+name = "nib"
 version = "0.1.0"
 edition = "2021"
 description = "Local-first grammar assistant"
 authors = ["Baris Gunaydin"]
-default-run = "quill"
+default-run = "nib"
 
 [lib]
-name = "quill_lib"
+name = "nib_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -51,12 +51,12 @@ objc2-app-kit = { version = "0.3", optional = true, features = ["NSWindow", "NSP
 objc2-foundation = { version = "0.3", optional = true, features = ["NSGeometry", "NSString"] }
 
 [[bin]]
-name = "quill"
+name = "nib"
 path = "src/main.rs"
 
 [[bin]]
-name = "quill-rewrite"
-path = "src/bin/quill_rewrite.rs"
+name = "nib-rewrite"
+path = "src/bin/nib_rewrite.rs"
 required-features = ["llm"]
 
 [profile.release]

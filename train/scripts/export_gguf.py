@@ -9,7 +9,7 @@ llama.cpp / candle / llama-cpp-rs consumption in `~/quill/shell/`.
 Run (after training):
     uv run python scripts/export_gguf.py \\
         --adapter ./checkpoints/gemma3-270m-coedit-lora \\
-        --out      ./checkpoints/quill-q4_k_m.gguf \\
+        --out      ./checkpoints/nib-q4_k_m.gguf \\
         --quant    q4_k_m
 
 Recommended quants for a 270M model:

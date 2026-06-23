@@ -10,9 +10,11 @@ and full-sentence AI rewrites — 100% on-device, no network calls, no account.
 > feature set in native Cocoa apps (TextEdit, Notes, Mail, Messages); clipboard
 > fallback for browsers / Electron. See the [roadmap](#roadmap).
 >
-> **Naming:** the product is **Nib**; the repo, crate, binaries, and the
-> `~/Library/Application Support/Quill/` data dir are still named `quill`
-> (kept for user-data back-compat). They refer to the same project.
+> **Naming:** the product, Cargo crate (`nib` / `nib_lib`), binaries (`nib`,
+> `nib-rewrite`), logs, `NIB_*` env vars, and the
+> `~/Library/Application Support/Nib/` data dir are all **Nib**. Only the repo
+> clone directory (`~/quill`) and the GitHub slug (`abgnydn/quill`) keep the old
+> name. Existing `…/Quill/` data dirs are migrated to `…/Nib/` on first launch.
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -77,7 +79,7 @@ quill/                          # repo dir (product = "Nib")
 │   │   │   ├── models.rs        model registry + curl download orchestration
 │   │   │   ├── inference.rs     llama-cpp-2 wrapper, base + LoRA   (feature = "llm")
 │   │   │   ├── journal.rs       private edit journal (personalization)
-│   │   │   ├── config.rs        ~/…/Quill/config.json
+│   │   │   ├── config.rs        ~/…/Nib/config.json
 │   │   │   ├── training*.rs     Modal + local-QVAC personal training + scheduler
 │   │   │   ├── qvac.rs          locator for bundled QVAC Fabric binaries
 │   │   │   └── overlay/         macOS-only system overlay        (feature = "overlay")
@@ -137,7 +139,7 @@ the runtime log. The ad-hoc codesign with the stable `app.nib` identifier is
 ## Personalization
 
 Nib keeps a private edit journal at
-`~/Library/Application Support/Quill/journal.jsonl` — every accepted suggestion
+`~/Library/Application Support/Nib/journal.jsonl` — every accepted suggestion
 and AI rewrite, never sent anywhere. The main-window footer shows the count.
 
 When you've accumulated enough edits (~50+), Nib can train a **personal LoRA
@@ -177,7 +179,7 @@ How the tiered apply works:
    Safari/Chrome/Electron because they accept paste like any other app.
 
 The strategy used per apply lands in the runtime log as
-`[quill][apply] strategy=AxuiText|Clipboard …` so per-app behavior is observable.
+`[nib][apply] strategy=AxuiText|Clipboard …` so per-app behavior is observable.
 Inline underlines still don't render in browsers/Electron (those don't expose
 `kAXBoundsForRangeParameterizedAttribute`), but the fallback summary panel
 beside the field lists every suggestion and click-to-fix works everywhere.
@@ -195,7 +197,7 @@ the AXUI bounds-plausibility filter (rejects garbage like
 bars denied), the personal-adapter load path, training decision logic, ChatML
 conversion, and a Tauri `mock_app` `focus-update` round-trip that exercises the
 emit/listen pipeline without launching a GUI. The two ignored tests do a full
-model+adapter load and run only when `QUILL_TEST_MODEL` points at a `.gguf`.
+model+adapter load and run only when `NIB_TEST_MODEL` points at a `.gguf`.
 
 ## Roadmap
 

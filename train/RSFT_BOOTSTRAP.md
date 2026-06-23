@@ -105,7 +105,7 @@ drift** by construction.
 ### 2. Sample with temperature, score with the eval
 
 `train/scripts/sample_completions.py` loops over `(source, tone,
-formality)` combinations and calls `quill-rewrite` (the production
+formality)` combinations and calls `nib-rewrite` (the production
 inference binary) with `--temperature 0.8 --top-p 0.95 --seed
 <random>` to generate 8-16 candidates per seed. Each candidate is
 scored via the eval's `score_output`. Passing candidates are written
@@ -133,7 +133,7 @@ changes generation to generation.
 The notebook's final cells run llama.cpp's `convert_lora_to_gguf.py`
 on the saved PEFT adapter directory and produce a ~35 MB f16 GGUF.
 This sits on top of the Qwen base at runtime via llama.cpp's
-`lora_adapter_init` (already wired into `quill-rewrite`). Every
+`lora_adapter_init` (already wired into `nib-rewrite`). Every
 future generation ships as a tiny adapter swap, not a full model
 re-download.
 

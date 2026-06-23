@@ -6,12 +6,12 @@ pool, sample N candidates from the base LFM2.5-1.2B with temperature
 > 0, score each via the eval harness, keep only completions that pass
 all constraints. Output ChatML JSONL ready for llama-finetune-lora.
 
-Zero API cost. Runs entirely on M2 Metal via the same quill-rewrite
+Zero API cost. Runs entirely on M2 Metal via the same nib-rewrite
 binary the eval harness uses.
 
 Usage:
     python sample_completions.py \\
-      --model ~/quill-research/models/lfm2.5-1.2b-instruct-q4_k_m.gguf \\
+      --model ~/nib-research/models/lfm2.5-1.2b-instruct-q4_k_m.gguf \\
       --seeds ../eval/cases.jsonl \\
       --n-samples 8 \\
       --out ../data/rsft-round1.jsonl
@@ -39,7 +39,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "eval"))
 from run_eval import (  # type: ignore
     compose_instruction,
     score_output,
-    QUILL_REWRITE,
+    NIB_REWRITE,
 )
 
 
@@ -137,10 +137,10 @@ def main() -> int:
                          "baseline for the no-filter-vs-RSFT ablation.")
     args = ap.parse_args()
 
-    if not os.path.exists(QUILL_REWRITE):
-        print(f"quill-rewrite not found at {QUILL_REWRITE}\n"
+    if not os.path.exists(NIB_REWRITE):
+        print(f"nib-rewrite not found at {NIB_REWRITE}\n"
               f"Build with: cd ~/quill/shell/src-tauri && "
-              f"cargo build --features llm --bin quill-rewrite --profile release-dev",
+              f"cargo build --features llm --bin nib-rewrite --profile release-dev",
               file=sys.stderr)
         return 2
 
@@ -184,7 +184,7 @@ def main() -> int:
         per_task_kept = 0
         for _ in range(args.n_samples):
             seed = random.randint(1, 2**31 - 1)
-            # We pass temperature + seed via the CLI args; quill-rewrite
+            # We pass temperature + seed via the CLI args; nib-rewrite
             # builds the sampler chain accordingly. Reuses run_model from
             # the harness — single source of truth for invocation.
             out = run_model_with_sampling(args.model, source, instr,
@@ -221,10 +221,10 @@ def run_model_with_sampling(
 ) -> str:
     """Like run_eval.run_model but adds --temperature / --top-p / --seed
     so the same prompt produces diverse candidates per call.
-    Optional --adapter passes through to quill-rewrite for self-bootstrap."""
+    Optional --adapter passes through to nib-rewrite for self-bootstrap."""
     import subprocess
     cmd = [
-        QUILL_REWRITE, "-m", model, "-t", source,
+        NIB_REWRITE, "-m", model, "-t", source,
         "--temperature", f"{temperature}",
         "--top-p", f"{top_p}",
         "--seed", str(seed),

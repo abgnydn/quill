@@ -34,7 +34,7 @@ pub fn spawn(
     backend: Arc<BackendConfig>,
 ) {
     thread::Builder::new()
-        .name("quill-retrain-scheduler".into())
+        .name("nib-retrain-scheduler".into())
         .spawn(move || run(journal, training, config, backend))
         .expect("spawn retrain scheduler");
 }
@@ -45,7 +45,7 @@ fn run(
     config: Arc<ConfigStore>,
     backend: Arc<BackendConfig>,
 ) {
-    eprintln!("[quill][scheduler] background retrain loop started (poll every {}s)", POLL_INTERVAL.as_secs());
+    eprintln!("[nib][scheduler] background retrain loop started (poll every {}s)", POLL_INTERVAL.as_secs());
     let mut waiting_on_job_since: Option<Instant> = None;
     loop {
         thread::sleep(POLL_INTERVAL);
@@ -72,7 +72,7 @@ fn run(
                         match training.install(&dest) {
                             Ok(bytes) => {
                                 eprintln!(
-                                    "[quill][scheduler] auto-installed {bytes}B → {}",
+                                    "[nib][scheduler] auto-installed {bytes}B → {}",
                                     dest.display()
                                 );
                                 let _ = config.update(|c| {
@@ -82,7 +82,7 @@ fn run(
                                 });
                             }
                             Err(e) => {
-                                eprintln!("[quill][scheduler] install failed: {e}");
+                                eprintln!("[nib][scheduler] install failed: {e}");
                             }
                         }
                     }
@@ -91,7 +91,7 @@ fn run(
                 }
                 JobState::Failed => {
                     eprintln!(
-                        "[quill][scheduler] last training failed: {}",
+                        "[nib][scheduler] last training failed: {}",
                         status.error.unwrap_or_else(|| "unknown".into())
                     );
                     training.reset();
@@ -119,21 +119,21 @@ fn run(
         // Export → spawn. Prefer LOCAL backend (free, ~5 min on Metal)
         // when bundled; fall back to Modal.
         let export_path: PathBuf =
-            std::env::temp_dir().join("quill-auto-retrain.jsonl");
+            std::env::temp_dir().join("nib-auto-retrain.jsonl");
         match journal.export_training_pairs(&export_path) {
             Ok(n) if n >= 10 => {
                 let start_result = if backend.local_ready() {
                     let finetune = backend.finetune_bin.clone().unwrap();
                     let base = backend.base_model.clone().unwrap();
                     let out = crate::state::personal_adapter_path()
-                        .unwrap_or_else(|| std::env::temp_dir().join("quill-auto-adapter.gguf"));
+                        .unwrap_or_else(|| std::env::temp_dir().join("nib-auto-adapter.gguf"));
                     eprintln!(
-                        "[quill][scheduler] firing auto-retrain (LOCAL): {n} pairs, {new_events} new events"
+                        "[nib][scheduler] firing auto-retrain (LOCAL): {n} pairs, {new_events} new events"
                     );
                     training.start_local(finetune, base, export_path.clone(), out)
                 } else {
                     eprintln!(
-                        "[quill][scheduler] firing auto-retrain (MODAL fallback): {n} pairs, {new_events} new events"
+                        "[nib][scheduler] firing auto-retrain (MODAL fallback): {n} pairs, {new_events} new events"
                     );
                     training.start(export_path.clone())
                 };
@@ -142,15 +142,15 @@ fn run(
                         waiting_on_job_since = Some(Instant::now());
                     }
                     Err(e) => {
-                        eprintln!("[quill][scheduler] start failed: {e}");
+                        eprintln!("[nib][scheduler] start failed: {e}");
                     }
                 }
             }
             Ok(n) => {
-                eprintln!("[quill][scheduler] only {n} applied pairs in export, skipping");
+                eprintln!("[nib][scheduler] only {n} applied pairs in export, skipping");
             }
             Err(e) => {
-                eprintln!("[quill][scheduler] export failed: {e}");
+                eprintln!("[nib][scheduler] export failed: {e}");
             }
         }
     }

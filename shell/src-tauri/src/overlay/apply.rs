@@ -12,8 +12,8 @@
 //!      clipboard helper. The selection was already moved in step 1, so
 //!      the paste replaces the right characters.
 //!
-//! When the fallback fires, we log `[quill][apply] fallback=clipboard`
-//! so per-app behaviour is observable in `/tmp/quill.log`.
+//! When the fallback fires, we log `[nib][apply] fallback=clipboard`
+//! so per-app behaviour is observable in `/tmp/nib.log`.
 
 #![cfg(all(target_os = "macos", feature = "overlay"))]
 
@@ -64,7 +64,7 @@ pub enum ApplyStrategy {
 pub fn apply(start: u32, end: u32, replacement: &str) -> Result<(), ApplyError> {
     let strategy = apply_with_strategy(start, end, replacement)?;
     eprintln!(
-        "[quill][apply] strategy={strategy:?} start={start} end={end} len={}",
+        "[nib][apply] strategy={strategy:?} start={start} end={end} len={}",
         replacement.chars().count()
     );
     Ok(())
@@ -78,15 +78,15 @@ pub fn apply_with_strategy(
     let length = end.saturating_sub(start);
 
     // Prefer the cached engaged element from focus_tracker. Clicking our
-    // overlay popover activates Quill's app and shifts live AXUI focus
+    // overlay popover activates Nib's app and shifts live AXUI focus
     // away from the user's writing app — re-querying here would write to
     // our own WKWebView. The cache holds the last text-field the focus
     // tracker engaged on, which is the right target.
     let elem = if let Some(saved) = crate::overlay::engaged_elem::current_handle() {
-        eprintln!("[quill][apply] using saved engaged elem");
+        eprintln!("[nib][apply] using saved engaged elem");
         saved as AXUIElementRef
     } else {
-        eprintln!("[quill][apply] no saved elem — falling back to live AXUI query");
+        eprintln!("[nib][apply] no saved elem — falling back to live AXUI query");
         let system_wide = unsafe { AXUIElementCreateSystemWide() };
         let app = copy_attr_ref(system_wide, kAXFocusedApplicationAttribute)
             .ok_or(ApplyError::NoFocusedApp)?;
@@ -183,15 +183,15 @@ mod tests {
         assert!(s.contains("clipboard"));
     }
 
-    /// Integration test (gated): actually focuses Quill's own window and
+    /// Integration test (gated): actually focuses Nib's own window and
     /// runs apply_with_strategy to verify the AXUI path returns
-    /// `Strategy::AxuiText` on WKWebView. Only enabled if QUILL_TEST_AXUI=1
+    /// `Strategy::AxuiText` on WKWebView. Only enabled if NIB_TEST_AXUI=1
     /// so CI without an active session doesn't pop random apply events.
     #[test]
     #[ignore]
     fn axui_path_returns_axui_text_when_native_focused() {
-        if std::env::var("QUILL_TEST_AXUI").ok().as_deref() != Some("1") {
-            eprintln!("set QUILL_TEST_AXUI=1 with a Cocoa text field focused");
+        if std::env::var("NIB_TEST_AXUI").ok().as_deref() != Some("1") {
+            eprintln!("set NIB_TEST_AXUI=1 with a Cocoa text field focused");
             return;
         }
         let r = apply_with_strategy(0, 0, " ");

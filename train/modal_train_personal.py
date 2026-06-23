@@ -21,7 +21,7 @@ USAGE (~15 min on Modal L4, ~$0.20):
 
     cd ~/quill/train
     HF_TOKEN=hf_xxx .venv/bin/modal run modal_train_personal.py \\
-        --journal /tmp/quill-training-2026-05-21T15-30-45.jsonl
+        --journal /tmp/nib-training-2026-05-21T15-30-45.jsonl
 
 ARGUMENTS (tweakable):
     --epochs            default 2 — keep it small, this is a delta on top
@@ -37,7 +37,7 @@ import subprocess
 
 import modal
 
-APP_NAME = "quill-train-personal"
+APP_NAME = "nib-train-personal"
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -50,7 +50,7 @@ image = (
 )
 
 app = modal.App(APP_NAME, image=image)
-volume = modal.Volume.from_name("quill-artifacts", create_if_missing=True)
+volume = modal.Volume.from_name("nib-artifacts", create_if_missing=True)
 
 GEMMA_TEMPLATE = (
     "<start_of_turn>user\n{src}<end_of_turn>\n"
@@ -236,7 +236,7 @@ def main(journal: str, epochs: int = 2, lr: float = 5e-5):
     local_path = local_dir / "personal-adapter.gguf"
     print(f"[quill.personal] downloading GGUF → {local_path}")
     subprocess.run(
-        ["modal", "volume", "get", "--force", "quill-artifacts",
+        ["modal", "volume", "get", "--force", "nib-artifacts",
          "personal-adapter.gguf", str(local_path)],
         check=True,
     )

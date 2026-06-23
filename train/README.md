@@ -32,7 +32,7 @@ human labels, no preference data. Five steps, all reproducible from this repo:
    machine-checkable `WORDS` / `FORBID` / `KEEP` constraints. `eval/run_eval.py`'s
    `score_output()` is the single source of truth.
 2. **Sample + score** — `scripts/sample_completions.py` drives the production
-   `quill-rewrite` CLI at `--temperature 0.8 --top-p 0.95` to generate 8–16
+   `nib-rewrite` CLI at `--temperature 0.8 --top-p 0.95` to generate 8–16
    candidates per seed, scores each with `score_output`, keeps the passers.
    From v2.2 on it samples through the previous adapter (`--adapter <prev>.gguf`).
 3. **Train a LoRA** — `colab/train_nib_v2.ipynb` (Unsloth + TRL on free Colab
@@ -80,7 +80,7 @@ train/
 ```bash
 git clone https://github.com/abgnydn/quill && cd quill/train
 
-# Eval an adapter against held-out cases (needs the quill-rewrite binary built
+# Eval an adapter against held-out cases (needs the nib-rewrite binary built
 # from ../shell/src-tauri with --features llm):
 python eval/run_eval.py \
     --model  <qwen-base.gguf> \

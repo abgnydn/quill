@@ -2,7 +2,7 @@
 //!
 //! Every time the user accepts or dismisses a Nib suggestion (whether a
 //! Harper-derived chip or an AI rewrite), we append one JSON line to a
-//! file under `~/Library/Application Support/Quill/journal.jsonl`. The
+//! file under `~/Library/Application Support/Nib/journal.jsonl`. The
 //! file never leaves the device unless the user explicitly exports it.
 //!
 //! Format is one self-contained JSON object per line so:
@@ -36,7 +36,7 @@ pub struct JournalEvent {
     pub lint_end: Option<u32>,
     pub lint_kind: Option<String>,
     pub lint_message: Option<String>,
-    /// The text Quill offered — suggestion replacement, or the LLM rewrite.
+    /// The text Nib offered — suggestion replacement, or the LLM rewrite.
     pub suggested: String,
     /// The text actually written back. For an `apply` this is `suggested`;
     /// for a `rewrite_apply` same. For `dismiss` events: empty.
@@ -163,7 +163,7 @@ fn default_path() -> std::io::Result<PathBuf> {
         std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set")
     })?;
     let mut p = PathBuf::from(home);
-    p.push("Library/Application Support/Quill");
+    p.push("Library/Application Support/Nib");
     p.push("journal.jsonl");
     Ok(p)
 }
@@ -289,7 +289,7 @@ mod tests {
     /// hit before journal_log existed.
     #[test]
     fn n_logs_yield_n_in_stats() {
-        let tmp = std::env::temp_dir().join(format!("quill-jlog-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("nib-jlog-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let file = std::fs::OpenOptions::new()
@@ -317,7 +317,7 @@ mod tests {
     /// zero counts, zero exported pairs).
     #[test]
     fn empty_journal_is_safe() {
-        let tmp = std::env::temp_dir().join(format!("quill-jemp-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("nib-jemp-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let path = tmp.join("j.jsonl");
@@ -342,7 +342,7 @@ mod tests {
     /// pairs — those are negative signals for v0.6 DPO, not pairs.
     #[test]
     fn export_skips_non_applied_events() {
-        let tmp = std::env::temp_dir().join(format!("quill-jexp-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("nib-jexp-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let path = tmp.join("j.jsonl");
@@ -380,7 +380,7 @@ mod tests {
         use std::io::{BufRead, BufReader};
 
         // Use a tempdir so we don't touch ~/Library.
-        let tmp = std::env::temp_dir().join(format!("quill-journal-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("nib-journal-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let journal_path = tmp.join("journal.jsonl");

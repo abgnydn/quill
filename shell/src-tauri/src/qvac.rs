@@ -4,7 +4,7 @@
 //! + on-device LoRA fork of `llama.cpp`) and stages
 //!   llama-cli, llama-finetune-lora, *.dylib, *.metallib
 //! into `shell/src-tauri/resources/qvac/`. Tauri's bundler ships those
-//! into `Quill.app/Contents/Resources/_up_/resources/qvac/` (the
+//! into `Nib.app/Contents/Resources/_up_/resources/qvac/` (the
 //! resource-directory layout Tauri uses for `resources` glob entries).
 //!
 //! This module finds them at runtime via Tauri's resource resolver +
@@ -17,7 +17,7 @@ use tauri::path::BaseDirectory;
 use tauri::Manager;
 
 /// Locate the bundled QVAC binary by name (e.g. `"llama-cli"`).
-/// Returns `None` if Quill was built without QVAC staged.
+/// Returns `None` if Nib was built without QVAC staged.
 pub fn binary_path(app: &tauri::AppHandle, name: &str) -> Option<PathBuf> {
     app.path()
         .resolve(

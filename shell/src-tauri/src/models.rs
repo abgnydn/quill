@@ -208,9 +208,9 @@ pub fn downloaded_models_dir() -> std::io::Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set"))?;
     let mut p = PathBuf::from(home);
-    // Note: dir stays as "Quill" for back-compat with existing user data;
-    // a future migration will move it to "Nib".
-    p.push("Library/Application Support/Quill/models");
+    // The data dir is "Nib"; existing "Quill" dirs are migrated on startup by
+    // `config::migrate_legacy_data_dir`, so user data carries over.
+    p.push("Library/Application Support/Nib/models");
     std::fs::create_dir_all(&p)?;
     Ok(p)
 }

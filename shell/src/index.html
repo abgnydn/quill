@@ -102,7 +102,7 @@
         <h4>How Nib learns from you</h4>
         <ol>
           <li><strong>Every accepted edit gets logged</strong> to
-            <code>~/Library/Application Support/Quill/journal.jsonl</code>
+            <code>~/Library/Application Support/Nib/journal.jsonl</code>
             — the source text + your applied fix, nothing else. No analytics,
             no network call.</li>
           <li><strong>After N edits</strong> (default 25, configurable above),
@@ -113,7 +113,7 @@
             about 5 minutes for 25-50 edits. Rank-16 LoRA on the attention
             layers (attn_q/k/v/o) of LFM2.5. ~50 MB adapter file.</li>
           <li><strong>The new adapter lands at</strong>
-            <code>~/Library/.../Quill/personal-adapter.gguf</code> and loads
+            <code>~/Library/.../Nib/personal-adapter.gguf</code> and loads
             on the next Nib launch. From then on, every rewrite goes through
             base model + your personal LoRA on top.</li>
           <li><strong>You can train manually</strong> via the Train button

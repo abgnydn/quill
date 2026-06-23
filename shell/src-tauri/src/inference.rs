@@ -89,7 +89,7 @@ impl RewriteEngine {
                 let ad = model
                     .lora_adapter_init(&path)
                     .with_context(|| format!("loading LoRA adapter at {}", path.display()))?;
-                eprintln!("[quill] personal LoRA adapter loaded from {}", path.display());
+                eprintln!("[nib] personal LoRA adapter loaded from {}", path.display());
                 (Some(Mutex::new(AdapterCell(ad))), Some(path))
             }
             None => (None, None),
@@ -262,7 +262,7 @@ impl RewriteEngine {
 
     /// Single-shot rewrite with a caller-supplied sampler. Shared between
     /// `rewrite_streaming` (greedy chain), `rewrite_variants` (per-variant
-    /// sampler), and the `quill-rewrite` CLI (when called with --temperature
+    /// sampler), and the `nib-rewrite` CLI (when called with --temperature
     /// for RSFT data generation). Parameter-driven so the public APIs
     /// don't accidentally share sampler state. Each call builds a fresh
     /// context, so concurrent / sequential calls don't share KV cache.

@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Quill — run the entire automated test suite.
+# Nib — run the entire automated test suite.
 #
 #   - Rust:   `cargo test --features llm,overlay --lib`   (~64 tests, +2 ignored, macOS)
 #   - Python: AST-parse every train/ script               (all train/**/*.py)
 #   - Optional: `--with-model` runs the gated full-model test
-#               (requires QUILL_TEST_MODEL=path/to/.gguf set).
+#               (requires NIB_TEST_MODEL=path/to/.gguf set).
 #
 # Usage:
 #     ./scripts/test.sh
 #     ./scripts/test.sh --with-model
-#     QUILL_TEST_MODEL=~/quill/train/checkpoints/quill-q4_k_m.gguf \
+#     NIB_TEST_MODEL=~/quill/train/checkpoints/nib-q4_k_m.gguf \
 #         ./scripts/test.sh --with-model
 
 set -euo pipefail
@@ -35,13 +35,13 @@ bold "== rust =="
 ok "shell/src-tauri tests"
 
 if [[ "$WITH_MODEL" -eq 1 ]]; then
-  bold "== rust (ignored / requires QUILL_TEST_MODEL) =="
-  if [[ -n "${QUILL_TEST_MODEL:-}" ]]; then
+  bold "== rust (ignored / requires NIB_TEST_MODEL) =="
+  if [[ -n "${NIB_TEST_MODEL:-}" ]]; then
     ( cd "$REPO/shell/src-tauri" && cargo test --features llm,overlay --lib -- --ignored 2>&1 ) \
       | tail -5
     ok "full model+adapter load"
   else
-    echo "  QUILL_TEST_MODEL not set — skipping (export QUILL_TEST_MODEL=… to enable)"
+    echo "  NIB_TEST_MODEL not set — skipping (export NIB_TEST_MODEL=… to enable)"
   fi
 fi
 

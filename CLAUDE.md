@@ -5,11 +5,13 @@ A native macOS grammar/writing assistant that pairs a fast Rust rule engine
 quality than Harper alone, better latency and footprint than Grammarly, 100%
 local, no network call.
 
-> **Naming:** the shipping product is **Nib**. The repo dir, Cargo crate
-> (`quill` / `quill_lib`), the binaries (`quill`, `quill-rewrite`), every
-> `[quill]` log prefix, and the `~/Library/Application Support/Quill/` data dir
-> are all still named `quill` — kept deliberately for user-data back-compat
-> (`models.rs` documents the deferred migration). Same project; two names.
+> **Naming:** the shipping product is **Nib**, and the rename is complete —
+> Cargo crate (`nib` / `nib_lib`), binaries (`nib`, `nib-rewrite`), every
+> `[nib]` log prefix, the `NIB_*` env vars, and the
+> `~/Library/Application Support/Nib/` data dir are all `nib`. Only the repo
+> clone directory (`~/quill`) and the GitHub slug (`abgnydn/quill`) keep the old
+> name. Existing `…/Quill/` data is migrated to `…/Nib/` on first launch by
+> `config::migrate_legacy_data_dir`.
 
 ## Architecture
 
@@ -69,7 +71,7 @@ quill/
 │   │       ├── config.rs     # config.json
 │   │       ├── training.rs / training_local.rs / training_scheduler.rs
 │   │       ├── qvac.rs       # locator for bundled QVAC Fabric binaries
-│   │       ├── bin/quill_rewrite.rs   # CLI used by the RSFT sampler
+│   │       ├── bin/nib_rewrite.rs   # CLI used by the RSFT sampler
 │   │       └── overlay/      # window, focus_tracker, engagement_policy,
 │   │                         # mouse_arbiter, engaged_elem, apply, clipboard
 │   └── src/                  # index/main/styles + overlay html/js/css
@@ -96,8 +98,10 @@ The arc, oldest → newest:
   `{src,tgt}` JSONL; personal LoRA loads on top of the base if present.
 - ✅ Menubar mode (LSUIElement) + background auto-retrain scheduler.
 - ✅ Multi-model picker + curl downloads + per-app overrides + dictionary + pauses.
-- ✅ **Renamed Quill → Nib on the user-facing surface** (productName, tray,
-  bundle id `app.nib`, model display names). Internals stay `quill`.
+- ✅ **Renamed Quill → Nib throughout** (productName, tray, bundle id `app.nib`,
+  model display names, Cargo crate `nib`/`nib_lib`, binaries `nib`/`nib-rewrite`,
+  `[nib]` logs, `NIB_*` env, data dir → `…/Nib` with a one-time startup
+  migration). Only the repo clone dir `~/quill` + GitHub slug keep the old name.
 - ✅ QVAC Fabric binaries bundled (`qvac.rs` locator); **local LoRA training**
   via `training_local.rs` wrapping `llama-finetune-lora` on Metal — the
   scheduler prefers it over Modal whenever bundled.
@@ -115,11 +119,11 @@ The arc, oldest → newest:
 **Bare `continue` = run these steps in order, no re-briefing.**
 
 Volatile state lives in `git log -10` and
-`~/Library/Application Support/Quill/{journal.jsonl,config.json}`. This block
+`~/Library/Application Support/Nib/{journal.jsonl,config.json}`. This block
 is the current *direction*, not the current commit.
 
 1. **Verify state:** `cd ~/quill && git log -3 --oneline`, then
-   `pgrep -fl Nib.app/Contents/MacOS/quill`. If Nib isn't running, reinstall:
+   `pgrep -fl Nib.app/Contents/MacOS/nib`. If Nib isn't running, reinstall:
    `./scripts/install-dev.sh --build` (first build on a fresh machine also
    `cmake --build`s QVAC into `~/.cache/qvac/`, ~5 min one-time).
 2. **Run tests:** `./scripts/test.sh` — ~64 + 2 ignored. A drop is a regression.
@@ -144,9 +148,10 @@ is the current *direction*, not the current commit.
 
 ## Known gaps / next concrete tasks
 
-- The **Quill→Nib rename is surface-only**: crate/binary/log-prefix/data-dir
-  are still `quill`. The data-dir rename needs a migration (don't break
-  existing users' `~/…/Quill/` journal + adapter).
+- The Quill→Nib rename is complete (crate/binaries/logs/`NIB_*` env/data-dir
+  all `nib`, with a startup migration of the old `…/Quill/` data dir via
+  `config::migrate_legacy_data_dir`). Only the repo clone dir `~/quill` and the
+  GitHub slug `abgnydn/quill` retain the old name (filesystem/remote facts).
 - The default `.app` bundle is **~260 MB** (LFM2.5 default), not the original
   ~80 MB north star — BitNet is the path back toward it.
 - Cargo `default = []` — a bare `cargo build` is Harper-only; the real app

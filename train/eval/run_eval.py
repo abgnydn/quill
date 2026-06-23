@@ -66,13 +66,13 @@ def build_prompt(source: str, instruction: str | None) -> str:
 
 # ───────────────────────── runners ─────────────────────────
 
-# Nib's own `quill-rewrite` Rust binary — uses the SAME llama-cpp-2
+# Nib's own `nib-rewrite` Rust binary — uses the SAME llama-cpp-2
 # engine the app uses at runtime, so eval results match user experience
 # exactly. Avoids the dead-ends we hit otherwise:
 #   - QVAC's llama-cli requires conversation mode (no -no-cnv)
 #   - Vanilla llama.cpp from brew doesn't have LFM2.5 arch support
-QUILL_REWRITE = os.path.expanduser(
-    "~/quill/shell/src-tauri/target/release-dev/quill-rewrite"
+NIB_REWRITE = os.path.expanduser(
+    "~/quill/shell/src-tauri/target/release-dev/nib-rewrite"
 )
 
 
@@ -83,10 +83,10 @@ def run_model(
     *,
     adapter_path: str | None = None,
 ) -> str:
-    """Single-shot generation via Nib's own quill-rewrite binary.
+    """Single-shot generation via Nib's own nib-rewrite binary.
     Same engine as the running app — eval matches user experience.
     """
-    cmd = [QUILL_REWRITE, "-m", model_path, "-t", source]
+    cmd = [NIB_REWRITE, "-m", model_path, "-t", source]
     if instruction:
         cmd += ["-i", instruction]
     if adapter_path:
@@ -94,12 +94,12 @@ def run_model(
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=120,
-            errors="replace",   # quill-rewrite stderr has Metal-init binary chars
+            errors="replace",   # nib-rewrite stderr has Metal-init binary chars
         )
     except subprocess.TimeoutExpired:
         return "[TIMEOUT]"
     raw = proc.stdout.strip()
-    # quill-rewrite writes "[quill] rewrote in Xs ..." to stderr; the
+    # nib-rewrite writes "[nib] rewrote in Xs ..." to stderr; the
     # rewritten text goes to stdout on the last line(s). Take the last
     # non-empty block.
     lines = [l for l in raw.splitlines() if l.strip()]
@@ -275,10 +275,10 @@ def main() -> int:
     if args.adapter and not os.path.exists(args.adapter):
         print(f"adapter not found: {args.adapter}", file=sys.stderr)
         return 2
-    if not os.path.exists(QUILL_REWRITE):
-        print(f"quill-rewrite not found: {QUILL_REWRITE}\n"
+    if not os.path.exists(NIB_REWRITE):
+        print(f"nib-rewrite not found: {NIB_REWRITE}\n"
               f"Build it with: cd ~/quill/shell/src-tauri && "
-              f"cargo build --release --features llm --bin quill-rewrite",
+              f"cargo build --release --features llm --bin nib-rewrite",
               file=sys.stderr)
         return 2
 

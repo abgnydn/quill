@@ -1,4 +1,4 @@
-//! Decide whether the currently-focused element is a place Quill should
+//! Decide whether the currently-focused element is a place Nib should
 //! engage. Mirrors Grammarly's mental model: real prose surfaces only —
 //! no terminals, URL bars, password fields, search bars, code editors,
 //! or system launchers.
@@ -9,7 +9,7 @@
 
 #![cfg(all(target_os = "macos", feature = "overlay"))]
 
-/// Apps where Quill should never engage. Terminals, code IDEs, launchers,
+/// Apps where Nib should never engage. Terminals, code IDEs, launchers,
 /// chat-search bars, etc. — same surfaces Grammarly stays out of. A bundle
 /// prefix in `DENIED_BUNDLE_PREFIXES` also blocks (JetBrains family).
 pub const DENIED_BUNDLES: &[&str] = &[

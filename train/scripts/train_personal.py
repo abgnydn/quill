@@ -12,7 +12,7 @@ INPUT:  ~/Library/Application Support/Quill/journal.jsonl  (exported via the
 
 OUTPUT: a small GGUF LoRA adapter (~15 MB at rank 16) that Quill loads on
         top of its base model. Drops into `shell/src-tauri/resources/`
-        next to the base `quill-q4_k_m.gguf`.
+        next to the base `nib-q4_k_m.gguf`.
 
 REHEARSAL: to prevent catastrophic forgetting on a tiny personal dataset,
 we mix 50% personal pairs with 50% random CoEdIT pairs each step.
@@ -41,7 +41,7 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--lr", type=float, default=5e-5,
                     help="Lower than CoEdIT's 1e-4 — fewer steps, smaller deltas")
-    ap.add_argument("--out", default="checkpoints/quill-personal-q4_k_m.gguf")
+    ap.add_argument("--out", default="checkpoints/nib-personal-q4_k_m.gguf")
     args = ap.parse_args()
 
     j = Path(args.journal)

@@ -3,7 +3,7 @@
 # (RSFT_BOOTSTRAP.md) and converts via the Colab notebook's llama.cpp cells.
 # Kept for reference only.
 # ─────────────────────────────────────────────────────────────────────────────
-"""Salvage: convert an already-trained LoRA checkpoint in the quill-artifacts
+"""Salvage: convert an already-trained LoRA checkpoint in the nib-artifacts
 Modal volume into a quantized GGUF. CPU-only — no GPU contention, costs cents.
 
 Use this when training was interrupted but at least one checkpoint exists in
@@ -21,7 +21,7 @@ import subprocess
 
 import modal
 
-APP_NAME = "quill-convert"
+APP_NAME = "nib-convert"
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -42,7 +42,7 @@ image = (
 )
 
 app = modal.App(APP_NAME, image=image)
-volume = modal.Volume.from_name("quill-artifacts", create_if_missing=True)
+volume = modal.Volume.from_name("nib-artifacts", create_if_missing=True)
 
 
 @app.function(
@@ -85,12 +85,12 @@ def convert(checkpoint: str = "auto") -> dict:
         if not ckpt_path.exists():
             raise RuntimeError(f"{ckpt_path} not found")
 
-    print(f"[quill] using LoRA checkpoint: {ckpt_path}")
-    print(f"[quill] checkpoint contents: {[p.name for p in ckpt_path.iterdir()]}")
+    print(f"[nib] using LoRA checkpoint: {ckpt_path}")
+    print(f"[nib] checkpoint contents: {[p.name for p in ckpt_path.iterdir()]}")
 
     # --- Load base + merge LoRA ----------------------------------------------
     BASE = "google/gemma-3-270m-it"
-    print(f"[quill] loading base {BASE} (CPU, fp16) …")
+    print(f"[nib] loading base {BASE} (CPU, fp16) …")
     t0 = time.time()
     base = AutoModelForCausalLM.from_pretrained(
         BASE,
@@ -98,11 +98,11 @@ def convert(checkpoint: str = "auto") -> dict:
         device_map="cpu",
     )
     tok = AutoTokenizer.from_pretrained(BASE)
-    print(f"[quill] base loaded in {time.time() - t0:.1f}s")
+    print(f"[nib] base loaded in {time.time() - t0:.1f}s")
 
-    print(f"[quill] applying LoRA from {ckpt_path} …")
+    print(f"[nib] applying LoRA from {ckpt_path} …")
     model = PeftModel.from_pretrained(base, str(ckpt_path))
-    print(f"[quill] merging LoRA into base weights …")
+    print(f"[nib] merging LoRA into base weights …")
     merged = model.merge_and_unload()
 
     MERGED = Path("/artifacts/merged-16bit")
@@ -110,8 +110,8 @@ def convert(checkpoint: str = "auto") -> dict:
         shutil.rmtree(MERGED)
     merged.save_pretrained(str(MERGED), safe_serialization=True)
     tok.save_pretrained(str(MERGED))
-    print(f"[quill] merged 16-bit HF saved to {MERGED}")
-    print(f"[quill] merged dir size: ", end="")
+    print(f"[nib] merged 16-bit HF saved to {MERGED}")
+    print(f"[nib] merged dir size: ", end="")
     subprocess.run(["du", "-sh", str(MERGED)], check=True)
 
     # --- llama.cpp converter -------------------------------------------------
@@ -127,18 +127,18 @@ def convert(checkpoint: str = "auto") -> dict:
         check=True,
     )
 
-    F16_GGUF = Path("/artifacts/quill-f16.gguf")
-    print(f"[quill] converting HF → GGUF f16 …")
+    F16_GGUF = Path("/artifacts/nib-f16.gguf")
+    print(f"[nib] converting HF → GGUF f16 …")
     t1 = time.time()
     subprocess.run(
         ["python", str(LLAMA_DIR / "convert_hf_to_gguf.py"),
          str(MERGED), "--outfile", str(F16_GGUF), "--outtype", "f16"],
         check=True,
     )
-    print(f"[quill] f16 GGUF written in {time.time() - t1:.1f}s: ", end="")
+    print(f"[nib] f16 GGUF written in {time.time() - t1:.1f}s: ", end="")
     subprocess.run(["du", "-h", str(F16_GGUF)], check=True)
 
-    print(f"[quill] building llama-quantize …")
+    print(f"[nib] building llama-quantize …")
     subprocess.run(
         ["cmake", "-B", "build",
          "-DGGML_NATIVE=OFF",
@@ -153,15 +153,15 @@ def convert(checkpoint: str = "auto") -> dict:
         cwd=str(LLAMA_DIR), check=True,
     )
 
-    Q4_GGUF = Path("/artifacts/quill-q4_k_m.gguf")
-    print(f"[quill] quantizing → q4_k_m …")
+    Q4_GGUF = Path("/artifacts/nib-q4_k_m.gguf")
+    print(f"[nib] quantizing → q4_k_m …")
     subprocess.run(
         [str(LLAMA_DIR / "build" / "bin" / "llama-quantize"),
          str(F16_GGUF), str(Q4_GGUF), "q4_k_m"],
         check=True,
     )
     size_mb = Q4_GGUF.stat().st_size / (1024 * 1024)
-    print(f"[quill] DONE  q4_k_m GGUF: {size_mb:.1f} MB at {Q4_GGUF}")
+    print(f"[nib] DONE  q4_k_m GGUF: {size_mb:.1f} MB at {Q4_GGUF}")
 
     volume.commit()
     return {
@@ -173,22 +173,22 @@ def convert(checkpoint: str = "auto") -> dict:
 
 @app.local_entrypoint()
 def main(checkpoint: str = "auto"):
-    print(f"[quill] kicking off CPU-only conversion (checkpoint={checkpoint}) …")
+    print(f"[nib] kicking off CPU-only conversion (checkpoint={checkpoint}) …")
     result = convert.remote(checkpoint=checkpoint)
-    print(f"[quill] modal result: {result}")
+    print(f"[nib] modal result: {result}")
 
     local_dir = pathlib.Path("./checkpoints")
     local_dir.mkdir(parents=True, exist_ok=True)
-    out = local_dir / "quill-q4_k_m.gguf"
-    print(f"[quill] downloading GGUF → {out} …")
+    out = local_dir / "nib-q4_k_m.gguf"
+    print(f"[nib] downloading GGUF → {out} …")
     subprocess.run(
-        ["modal", "volume", "get", "--force", "quill-artifacts",
-         "quill-q4_k_m.gguf", str(out)],
+        ["modal", "volume", "get", "--force", "nib-artifacts",
+         "nib-q4_k_m.gguf", str(out)],
         check=True,
     )
-    print("[quill] also fetching the LoRA adapter dir …")
+    print("[nib] also fetching the LoRA adapter dir …")
     subprocess.run(
-        ["modal", "volume", "get", "--force", "quill-artifacts",
+        ["modal", "volume", "get", "--force", "nib-artifacts",
          "gemma3-270m-coedit-lora", str(local_dir / "gemma3-270m-coedit-lora")],
         check=True,
     )

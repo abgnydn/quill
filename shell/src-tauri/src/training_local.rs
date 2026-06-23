@@ -68,7 +68,7 @@ pub fn convert_journal_to_chatml(src: &Path, dst: &Path) -> Result<usize, LocalS
         let pair: JournalPair = match serde_json::from_str(trimmed) {
             Ok(p) => p,
             Err(e) => {
-                eprintln!("[quill][train_local] skipping line {lineno}: {e}");
+                eprintln!("[nib][train_local] skipping line {lineno}: {e}");
                 continue;
             }
         };
@@ -144,14 +144,14 @@ pub fn spawn(
         return Err(LocalStartError::ModelMissing(base_model.to_path_buf()));
     }
     let chatml = std::env::temp_dir().join(format!(
-        "quill-local-chatml-{}.jsonl",
+        "nib-local-chatml-{}.jsonl",
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0)
     ));
     let n = convert_journal_to_chatml(journal_export, &chatml)?;
-    eprintln!("[quill][train_local] {n} pairs → {}", chatml.display());
+    eprintln!("[nib][train_local] {n} pairs → {}", chatml.display());
 
     let mut cmd = build_command(
         qvac_bin,
@@ -164,7 +164,7 @@ pub fn spawn(
         /* learning_rate */ 5e-5,
     );
     eprintln!(
-        "[quill][train_local] spawning {} (model={} dataset={} -> {})",
+        "[nib][train_local] spawning {} (model={} dataset={} -> {})",
         qvac_bin.display(),
         base_model.display(),
         chatml.display(),
@@ -179,7 +179,7 @@ mod tests {
 
     fn write_journal(rows: &[(&str, &str)]) -> PathBuf {
         let p = std::env::temp_dir().join(format!(
-            "quill-tl-test-{}.jsonl",
+            "nib-tl-test-{}.jsonl",
             std::process::id()
         ));
         let mut f = File::create(&p).unwrap();
@@ -196,7 +196,7 @@ mod tests {
             ("this is an test", "this is a test"),
             ("their going", "they're going"),
         ]);
-        let dst = std::env::temp_dir().join("quill-tl-out.jsonl");
+        let dst = std::env::temp_dir().join("nib-tl-out.jsonl");
         let n = convert_journal_to_chatml(&src, &dst).unwrap();
         assert_eq!(n, 3);
         // Validate the first line parses + has the expected shape.
@@ -215,7 +215,7 @@ mod tests {
     #[test]
     fn conversion_skips_empty_and_malformed_rows() {
         let p = std::env::temp_dir().join(format!(
-            "quill-tl-bad-{}.jsonl",
+            "nib-tl-bad-{}.jsonl",
             std::process::id()
         ));
         let mut f = File::create(&p).unwrap();
@@ -225,7 +225,7 @@ mod tests {
         writeln!(f, r#"{{"src": "", "tgt": "x"}}"#).unwrap();
         writeln!(f, r#"{{"src": "y", "tgt": ""}}"#).unwrap();
         writeln!(f, r#"{{"src": "good2", "tgt": "fixed2"}}"#).unwrap();
-        let dst = std::env::temp_dir().join("quill-tl-bad-out.jsonl");
+        let dst = std::env::temp_dir().join("nib-tl-bad-out.jsonl");
         let n = convert_journal_to_chatml(&p, &dst).unwrap();
         // Only the two well-formed non-empty rows survive.
         assert_eq!(n, 2);
@@ -236,13 +236,13 @@ mod tests {
     #[test]
     fn conversion_errors_when_no_valid_pairs() {
         let p = std::env::temp_dir().join(format!(
-            "quill-tl-empty-{}.jsonl",
+            "nib-tl-empty-{}.jsonl",
             std::process::id()
         ));
         let mut f = File::create(&p).unwrap();
         writeln!(f, "").unwrap();
         writeln!(f, "garbage").unwrap();
-        let dst = std::env::temp_dir().join("quill-tl-empty-out.jsonl");
+        let dst = std::env::temp_dir().join("nib-tl-empty-out.jsonl");
         let err = convert_journal_to_chatml(&p, &dst).unwrap_err();
         assert!(matches!(err, LocalStartError::NoPairs));
         std::fs::remove_file(&p).ok();
