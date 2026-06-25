@@ -51,6 +51,5 @@ wrangler pages deploy site --project-name nib
 - A custom domain (e.g. `nib.app`) can be attached later under the project's
   **Custom domains** tab.
 
-> The outbound GitHub links in `index.html` point at `github.com/abgnydn/quill`
-> so they work today. GitHub auto-redirects after the repo rename, so they keep
-> working as `…/nib`; flip them to `/nib` whenever you like.
+> The outbound GitHub links point at `github.com/abgnydn/nib` — the repo's
+> current name after the rename.
