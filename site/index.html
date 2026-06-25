@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nib — local-first grammar &amp; writing assistant for macOS</title>
+  <meta name="description" content="Nib pairs the Harper rule engine with a small on-device LLM to catch mistakes and rewrite sentences across every macOS app — 100% local, no account, no network calls.">
+  <meta name="theme-color" content="#141329">
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="canonical" href="https://nib.pages.dev/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Nib — local-first grammar &amp; writing assistant for macOS">
+  <meta property="og:description" content="Harper rules + a small on-device LLM. Catches mistakes and rewrites sentences across every macOS app. 100% local, no account.">
+  <meta property="og:url" content="https://nib.pages.dev/">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="hero">
+    <nav class="nav" aria-label="Primary">
+      <a class="brand" href="/">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M3 21L13.2 10.8M14 4.2l5.8 5.8-7 2.2-1-1 2.2-7zM12.1 11.9a1.4 1.4 0 1 0 0-.1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+        <span>Nib</span>
+      </a>
+      <div class="nav-links">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#models">Models</a>
+        <a class="nav-cta" href="https://github.com/abgnydn/quill">GitHub</a>
+      </div>
+    </nav>
+
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <p class="eyebrow">Local-first · macOS</p>
+        <h1>Grammar and rewrites that never leave your Mac.</h1>
+        <p class="lede">
+          Nib pairs the <strong>Harper</strong> rule engine with a small <strong>on-device LLM</strong>
+          to catch mistakes and rewrite whole sentences — across every app, with
+          <strong>zero network calls</strong> and no account.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="https://github.com/abgnydn/quill">View on GitHub</a>
+          <a class="btn btn-ghost" href="#how">How it works</a>
+        </div>
+        <p class="hero-note">macOS 13+ · Apple Silicon · early access — build from source</p>
+      </div>
+
+      <div class="hero-demo" aria-hidden="true">
+        <div class="demo-card">
+          <div class="demo-bar"><span></span><span></span><span></span></div>
+          <p class="demo-text">I has <span class="lint">a apple</span>. The api returned a <span class="lint">eror</span>.</p>
+          <div class="demo-pop">
+            <span class="demo-tag">AGREEMENT</span>
+            <p class="demo-msg">Use <em>“an”</em> before a vowel sound.</p>
+            <div class="demo-buttons">
+              <span class="chip chip-fix">an apple</span>
+              <span class="chip chip-ai">↻ Rewrite with AI</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <section class="pitch">
+      <p>
+        Grammarly ships a bundled browser and a cloud round-trip. Harper is a beautiful
+        Rust grammar engine, but it deliberately refuses generative AI. <strong>Nib is both</strong> —
+        instant rule-based catches <em>plus</em> a local model for the contextual rewrites rules
+        can't reach — and it all runs offline.
+      </p>
+    </section>
+
+    <section id="features" class="section">
+      <h2 class="section-title">Why Nib</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>Two engines, one pass</h3>
+          <p>Harper rules flag typos and agreement in under 10&nbsp;ms. A local LLM rewrites the
+             full sentences rules can't fix — triggered on a selection or <kbd>⌘⇧R</kbd>.</p>
+        </article>
+        <article class="card">
+          <h3>100% on your Mac</h3>
+          <p>No servers, no account, no telemetry. Your words never touch a network — the model
+             runs entirely on-device through <code>llama.cpp</code>.</p>
+        </article>
+        <article class="card">
+          <h3>Works in every app</h3>
+          <p>A system overlay underlines and rewrites in TextEdit, Notes, Mail and Messages, with
+             a clipboard fallback that reaches browsers and Electron apps.</p>
+        </article>
+        <article class="card">
+          <h3>Tiny footprint</h3>
+          <p>A ~219&nbsp;MB bundled model instead of a bundled Chromium and a cloud hop. The BitNet
+             roadmap aims even smaller.</p>
+        </article>
+        <article class="card">
+          <h3>Learns your voice</h3>
+          <p>Accepted edits land in a private on-device journal that can fine-tune a personal LoRA —
+             trained locally, never uploaded.</p>
+        </article>
+        <article class="card">
+          <h3>Faithful rewrites</h3>
+          <p>The premium adapter preserves facts, numbers and technical tokens — <strong>88.9%</strong>
+             on our held-out eval vs <strong>64.4%</strong> for the stock base.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="how" class="section section-alt">
+      <h2 class="section-title">How it works</h2>
+      <ol class="steps">
+        <li>
+          <span class="step-n">1</span>
+          <div>
+            <h3>Track focus</h3>
+            <p>The macOS Accessibility API tells Nib which text field you're in — across any app,
+               without a plugin.</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-n">2</span>
+          <div>
+            <h3>Two-stage check</h3>
+            <p>Harper flags rule-based issues instantly. Select text or hit <kbd>⌘⇧R</kbd> and the
+               sentence goes to the local model for a rewrite.</p>
+          </div>
+        </li>
+        <li>
+          <span class="step-n">3</span>
+          <div>
+            <h3>Write back in place</h3>
+            <p>Accepted fixes are applied directly through the Accessibility API — or pasted via a
+               clipboard fallback where direct write isn't allowed.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="models" class="section">
+      <h2 class="section-title">Two model tiers</h2>
+      <div class="table-wrap">
+        <table class="models">
+          <thead>
+            <tr><th>Tier</th><th>Model</th><th>Notes</th><th>Size</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="pill">Default</span></td>
+              <td>LFM2.5-350M-Instruct</td>
+              <td>Bundled in the app; fast, ideal for grammar fixes.</td>
+              <td>~219&nbsp;MB</td>
+            </tr>
+            <tr>
+              <td><span class="pill pill-premium">Premium</span></td>
+              <td>Qwen&nbsp;2.5-1.5B + Nib-Faithful LoRA</td>
+              <td>Preserves facts, numbers &amp; technical tokens.</td>
+              <td>~940&nbsp;MB base + ~36&nbsp;MB adapter</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="muted-note">
+        The premium tier is an adapter applied at runtime on top of the shared Qwen base, so every
+        future iteration ships as a tiny adapter swap. It's trained by a $0 rejection-sampling
+        self-play loop.
+      </p>
+    </section>
+
+    <section class="section section-alt">
+      <h2 class="section-title">Private by design</h2>
+      <div class="privacy">
+        <p>
+          Every accepted suggestion and AI rewrite is stored in a local edit journal at
+          <code>~/Library/Application&nbsp;Support/Nib/journal.jsonl</code> — and never sent anywhere.
+          That journal is what trains your personal adapter, on your own machine. Nothing about your
+          writing leaves the Mac.
+        </p>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2 class="section-title">App compatibility</h2>
+      <ul class="compat">
+        <li><span class="ok">✓</span> TextEdit · Notes · Mail · Messages — inline underlines, popover, click-to-fix</li>
+        <li><span class="ok">✓</span> Safari address bar &amp; native Cocoa fields — full support</li>
+        <li><span class="ok">✓</span> Slack (native) — AXUI write-back with clipboard fallback</li>
+        <li><span class="partial">◑</span> Safari / Chrome web inputs, VS&nbsp;Code, Discord — click-to-fix via clipboard fallback</li>
+      </ul>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <a class="brand brand-footer" href="/">
+        <svg class="brand-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+          <path d="M3 21L13.2 10.8M14 4.2l5.8 5.8-7 2.2-1-1 2.2-7zM12.1 11.9a1.4 1.4 0 1 0 0-.1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+        </svg>
+        <span>Nib</span>
+      </a>
+      <p class="footer-tag">Local-first grammar &amp; writing for macOS.</p>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="https://github.com/abgnydn/quill">GitHub</a>
+        <a href="https://github.com/abgnydn/quill/blob/master/train/RSFT_BOOTSTRAP.md">The training loop</a>
+        <a href="https://github.com/Automattic/harper">Harper</a>
+      </nav>
+      <p class="footer-fine">
+        v2.3 · early access · built on Harper + llama.cpp. Personal project — ask before using.
+      </p>
+    </div>
+  </footer>
+</body>
+</html>
