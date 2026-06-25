@@ -247,8 +247,8 @@ To push past the v2.2 plateau, in rough order of expected payoff:
 ## Reproduce it
 
 ```bash
-git clone https://github.com/abgnydn/quill
-cd quill/train
+git clone https://github.com/abgnydn/nib
+cd nib/train
 ```
 
 Then either:

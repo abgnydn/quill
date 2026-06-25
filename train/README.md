@@ -78,7 +78,7 @@ train/
 ## Reproduce
 
 ```bash
-git clone https://github.com/abgnydn/quill && cd quill/train
+git clone https://github.com/abgnydn/nib && cd nib/train
 
 # Eval an adapter against held-out cases (needs the nib-rewrite binary built
 # from ../shell/src-tauri with --features llm):

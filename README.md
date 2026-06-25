@@ -11,10 +11,11 @@ and full-sentence AI rewrites — 100% on-device, no network calls, no account.
 > fallback for browsers / Electron. See the [roadmap](#roadmap).
 >
 > **Naming:** the product, Cargo crate (`nib` / `nib_lib`), binaries (`nib`,
-> `nib-rewrite`), logs, `NIB_*` env vars, and the
-> `~/Library/Application Support/Nib/` data dir are all **Nib**. Only the repo
-> clone directory (`~/quill`) and the GitHub slug (`abgnydn/quill`) keep the old
-> name. Existing `…/Quill/` data dirs are migrated to `…/Nib/` on first launch.
+> `nib-rewrite`), logs, `NIB_*` env vars, the
+> `~/Library/Application Support/Nib/` data dir, and the GitHub repo
+> (`abgnydn/nib`) are all **Nib**. The author's original local clone still lives
+> at `~/quill` (a fresh `git clone` now lands in `nib/`). Existing `…/Quill/`
+> data dirs are migrated to `…/Nib/` on first launch.
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
@@ -68,7 +69,7 @@ trained (a $0 rejection-sampling self-play loop) is documented in
 ## Architecture
 
 ```
-quill/                          # repo dir (product = "Nib")
+nib/                            # repo dir (product = "Nib")
 ├── shell/                      Tauri 2 app — the binary you actually run
 │   ├── src-tauri/
 │   │   ├── src/

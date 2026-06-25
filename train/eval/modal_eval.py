@@ -41,7 +41,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # — the exact files models.rs resolves at runtime.
 QWEN_URL = ("https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/"
             "qwen2.5-1.5b-instruct-q4_k_m.gguf?download=true")
-ADAPTER_URL = ("https://github.com/abgnydn/quill/releases/download/v2.1.0/"
+ADAPTER_URL = ("https://github.com/abgnydn/nib/releases/download/v2.1.0/"
                "nib-faithful-f16.gguf")
 
 # Image: Rust + cmake/C++ to build nib-rewrite (which links Tauri, hence the

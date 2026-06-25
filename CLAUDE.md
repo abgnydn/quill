@@ -7,10 +7,11 @@ local, no network call.
 
 > **Naming:** the shipping product is **Nib**, and the rename is complete —
 > Cargo crate (`nib` / `nib_lib`), binaries (`nib`, `nib-rewrite`), every
-> `[nib]` log prefix, the `NIB_*` env vars, and the
-> `~/Library/Application Support/Nib/` data dir are all `nib`. Only the repo
-> clone directory (`~/quill`) and the GitHub slug (`abgnydn/quill`) keep the old
-> name. Existing `…/Quill/` data is migrated to `…/Nib/` on first launch by
+> `[nib]` log prefix, the `NIB_*` env vars, the
+> `~/Library/Application Support/Nib/` data dir, and the GitHub repo
+> (`abgnydn/nib`) are all `nib`. Only the author's original local clone keeps the
+> old name — it still lives at `~/quill` (a fresh `git clone` now lands in
+> `nib/`). Existing `…/Quill/` data is migrated to `…/Nib/` on first launch by
 > `config::migrate_legacy_data_dir`.
 
 ## Architecture
@@ -54,7 +55,7 @@ re-download. The default build (`tauri.conf.json`) bundles only LFM2.5 +
 ## Layout
 
 ```
-quill/
+nib/
 ├── shell/                   # Tauri 2 + Rust
 │   ├── src-tauri/
 │   │   ├── Cargo.toml        # features: llm (llama-cpp-2), overlay (macOS AXUI)
@@ -101,7 +102,8 @@ The arc, oldest → newest:
 - ✅ **Renamed Quill → Nib throughout** (productName, tray, bundle id `app.nib`,
   model display names, Cargo crate `nib`/`nib_lib`, binaries `nib`/`nib-rewrite`,
   `[nib]` logs, `NIB_*` env, data dir → `…/Nib` with a one-time startup
-  migration). Only the repo clone dir `~/quill` + GitHub slug keep the old name.
+  migration). Only the author's original local clone dir `~/quill` keeps the old
+  name; the GitHub repo is now `abgnydn/nib`.
 - ✅ QVAC Fabric binaries bundled (`qvac.rs` locator); **local LoRA training**
   via `training_local.rs` wrapping `llama-finetune-lora` on Metal — the
   scheduler prefers it over Modal whenever bundled.
@@ -157,8 +159,9 @@ is the current *direction*, not the current commit.
 
 - The Quill→Nib rename is complete (crate/binaries/logs/`NIB_*` env/data-dir
   all `nib`, with a startup migration of the old `…/Quill/` data dir via
-  `config::migrate_legacy_data_dir`). Only the repo clone dir `~/quill` and the
-  GitHub slug `abgnydn/quill` retain the old name (filesystem/remote facts).
+  `config::migrate_legacy_data_dir`). Only the author's original local clone dir
+  `~/quill` retains the old name (a fresh clone now lands in `nib/`); the GitHub
+  repo is now `abgnydn/nib`.
 - The default `.app` bundle is **~260 MB** (LFM2.5 default), not the original
   ~80 MB north star — BitNet is the path back toward it.
 - Cargo `default = []` — a bare `cargo build` is Harper-only; the real app

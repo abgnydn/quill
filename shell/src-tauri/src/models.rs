@@ -94,7 +94,7 @@ pub const REGISTRY: &[ModelInfo] = &[
                 Qwen base downloads once, reusable for any future Nib \
                 adapter.",
         bundled: true,
-        url: Some("https://github.com/abgnydn/quill/releases/download/v2.1.0/nib-faithful-f16.gguf"),
+        url: Some("https://github.com/abgnydn/nib/releases/download/v2.1.0/nib-faithful-f16.gguf"),
         filename: "nib-faithful-f16.gguf",
         requires_base: Some("qwen2.5-1.5b-instruct"),
     },
