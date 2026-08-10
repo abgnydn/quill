@@ -59,18 +59,26 @@ Settings shows what's installed:
 | Tier | Model | Notes | Size |
 |---|---|---|---|
 | **Default** | LFM2.5-350M-Instruct | bundled in the `.app`; fast, best for grammar fixes | ~219 MB |
-| **Premium** | Qwen 2.5-1.5B + **Nib-Faithful LoRA** | preserves facts/numbers/technical tokens; **88.9%** on the 90-case held-out eval (v2.2 adapter) vs **64.4%** for stock Qwen | base ~940 MB (download once) + adapter ~36 MB |
+| **Premium** | Qwen 2.5-1.5B + **Nib-Faithful LoRA** | preserves facts/numbers/technical tokens; **81.1%** strict / **88.9%** legacy on the 90-case held-out eval (v2.2 adapter) vs **64.4%** for stock Qwen | base ~940 MB (download once) + adapter ~36 MB |
 
 The premium tier is an adapter applied at runtime on top of the shared Qwen
 base — every future iteration ships as a tiny adapter swap. How that adapter is
 trained (a $0 rejection-sampling self-play loop) is documented in
 [`train/RSFT_BOOTSTRAP.md`](train/RSFT_BOOTSTRAP.md).
 
-> **Known gap:** the in-app download for the adapter points at a `v2.1.0`
-> GitHub release asset (`nib-faithful-f16.gguf`) that hasn't been published
-> yet — until `gh release create v2.1.0 nib-faithful-f16.gguf` happens (ship
-> the v2.2 adapter under that name), the premium download fails with a clear
-> error. The Qwen base download from Hugging Face works today.
+*Scoring note:* the eval harness now word-boundary-matches must-keep terms by
+default (**81.1%**); the older unanchored-substring matching (**88.9%**,
+`--legacy-keep-match`) is what every number in `train/reports/` was produced
+with. Most of the gap is abbreviation-expansion cases (`72h`→`72 hours`) where
+the numeric value is preserved but the notation changes.
+
+> **Release:** the adapter the in-app download fetches
+> (`nib-faithful-f16.gguf`, sha256 `aee9fe37…232b`) is a faithful
+> reproduction of the v2.2 adapter — 88.9% legacy / 81.1% strict on the
+> held-out benchmark, trained from `train/data/rsft-round3.jsonl` via
+> `train/colab/train_nib_v2.ipynb`. It ships as the
+> [`v2.1.0`](https://github.com/abgnydn/nib/releases/tag/v2.1.0) GitHub
+> release (`gh release create v2.1.0 nib-faithful-f16.gguf`).
 
 ## Architecture
 

@@ -331,7 +331,7 @@ def main() -> int:
         return 2
     if not os.path.exists(binary):
         print(f"nib-rewrite not found: {binary}\n"
-              f"Build it with: cd ~/quill/shell/src-tauri && "
+              f"Build it with: cd shell/src-tauri && "
               f"cargo build --profile release-dev --features llm --bin nib-rewrite",
               file=sys.stderr)
         return 2

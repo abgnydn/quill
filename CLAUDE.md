@@ -116,7 +116,9 @@ The arc, oldest → newest:
 - ✅ **v2.0 model pivot**: dropped Gemma 3 270M. LFM2.5-350M is the bundled
   default; Qwen 2.5-1.5B + an RSFT LoRA is the premium tier.
 - ✅ **v2.1–v2.3 RSFT loop** (`train/RSFT_BOOTSTRAP.md`): rejection-sampling
-  self-play on Qwen lifts a 90-case held-out benchmark 64.4% → 83.3% → 88.9%,
+  self-play on Qwen lifts a 90-case held-out benchmark 64.4% → 83.3% → 88.9%
+  (legacy substring scorer; 81.1% under the strict word-boundary scorer that
+  is now the `run_eval.py` default — see `train/reports/repro-v2.2-*`),
   then a negative-control 4th generation plateaus (87.8%) — proving the loop
   only compounds with new injected signal, not pure self-resampling.
 - ✅ Tests green via `./scripts/test.sh` (~67 Rust + 2 ignored, Python AST,

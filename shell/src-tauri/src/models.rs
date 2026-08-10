@@ -96,7 +96,7 @@ pub const REGISTRY: &[ModelInfo] = &[
         size_mb: 36,
         blurb: "Premium. Nib's faithful-rewrite LoRA layered on Qwen 2.5-\
                 1.5B — preserves facts, numbers, and technical tokens. \
-                88.9% on the 90-case held-out benchmark (vs 64.4% for \
+                81.1% on the 90-case held-out benchmark (vs 64.4% for \
                 stock Qwen). Adapter is ~36 MB; the 940 MB Qwen base \
                 downloads once, reusable for any future Nib adapter.",
         bundled: true,
