@@ -7,6 +7,9 @@
   --accent: #7c9cff;
   --accent-2: #5a7cff;
   --fg: #f0f2f8;
+  /* The rewrite panel's .rp-* rules use --ink for body text; it was never
+     defined and only rendered via color inheritance by luck. */
+  --ink: #f0f2f8;
   --fg-dim: #8b93a7;
   --fg-mute: #5d647a;
   --spell: #ff6b6b;

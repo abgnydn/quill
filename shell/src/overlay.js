@@ -527,7 +527,9 @@
       </div>`;
     }).join("");
     const b = currentFieldBounds;
-    const W = window.innerWidth, H = window.innerHeight;
+    // The overlay window is 4096×3072 — window.innerWidth/Height are
+    // useless for clamping (see showPopover). Use the real screen bounds.
+    const W = screen.availWidth, H = screen.availHeight;
     const fw = 300 + 24;
     let x = b.x + b.w + 12;
     let y = b.y;
@@ -574,6 +576,12 @@
     // the focused app — so an empty update here means the user actually
     // switched to a non-engaged app like Cursor/Terminal. Clear state +
     // hide the popover so stale underlines don't linger on the new window.)
+    // The popover's lint offsets are stale the moment the text or field
+    // changes — actually hide it (this comment used to lie).
+    if (popover.classList.contains("visible") &&
+        (!newBounds || newText !== currentText)) {
+      hidePopover();
+    }
     currentText = newText;
     currentLints = newLints;
     currentFieldBounds = newBounds;
@@ -595,6 +603,10 @@
   // Tracks the most recent selection-update so the rewrite panel knows
   // what text to send to the model and what range to apply over.
   let currentSelection = null;  // { rect, text, start, end } | null
+  // Snapshot taken when the panel OPENS. Apply must write over the range
+  // the user asked to rewrite — not whatever they happen to have selected
+  // by the time they click Apply.
+  let panelSelection = null;
   let rpSession = null;
   let rpRewrite = "";
 
@@ -602,6 +614,7 @@
   const hideRewritePanel = () => {
     rewritePanel.hidden = true;
     rpRewrite = "";
+    panelSelection = null;
     rpApply.hidden = true;
     rpRegen.hidden = true;
     rpOut.textContent = "";
@@ -647,7 +660,10 @@
 
   listen("selection-update", (evt) => {
     const p = evt.payload || {};
-    currentSelection = (p.rect && p.text)
+    // `truncated` selections carry only a prefix of the real range —
+    // rewriting them would replace the full range with a rewrite of the
+    // prefix, deleting the tail. Never offer the trigger for those.
+    currentSelection = (p.rect && p.text && !p.truncated)
       ? { rect: p.rect, text: p.text, start: p.start, end: p.end }
       : null;
     if (!currentSelection) {
@@ -663,8 +679,10 @@
 
   selTrigger.addEventListener("click", () => {
     if (!currentSelection) return;
-    ping("sel-trigger-click", currentSelection.text.length, "");
-    rpSource.textContent = currentSelection.text;
+    // Freeze the selection the panel operates on.
+    panelSelection = { ...currentSelection };
+    ping("sel-trigger-click", panelSelection.text.length, "");
+    rpSource.textContent = panelSelection.text;
     rpOut.textContent = "";
     rpStreaming.hidden = true;
     rpApply.hidden = true;
@@ -676,7 +694,7 @@
     rpToneRow.querySelectorAll(".rp-chip").forEach(c => c.classList.remove("active"));
     rpFormalityRow.querySelectorAll(".rp-chip").forEach(c => c.classList.remove("active"));
     refreshInstrBadge();
-    positionRewritePanel(currentSelection.rect);
+    positionRewritePanel(panelSelection.rect);
     rewritePanel.hidden = false;
     hideTrigger();
     requestAnimationFrame(pushHotRegions);
@@ -758,10 +776,10 @@
   rpClose.addEventListener("click", hideRewritePanel);
 
   const runRewritePanel = async () => {
-    if (!currentSelection) return;
+    if (!panelSelection) return;
     // Min-length guard: under 30 chars the model has no grounding and
     // hallucinates. Show a friendly message instead of trying.
-    if (currentSelection.text.trim().length < MIN_REWRITE_CHARS) {
+    if (panelSelection.text.trim().length < MIN_REWRITE_CHARS) {
       rpOut.innerHTML =
         '<div class="rp-too-short">Select a full sentence (at least ' +
         MIN_REWRITE_CHARS + ' characters) — the model needs context to ' +
@@ -770,7 +788,7 @@
       rpApply.hidden = true;
       rpRegen.hidden = true;
       rpGo.disabled = false;
-      ping("rp-rewrite-too-short", currentSelection.text.length, "");
+      ping("rp-rewrite-too-short", panelSelection.text.length, "");
       return;
     }
     rpGo.disabled = true;
@@ -792,20 +810,33 @@
       }
     });
     try {
+      // rewrite returns { text, truncated }.
       const out = await invoke("rewrite", {
-        text: currentSelection.text,
+        text: panelSelection.text,
         instruction: composeInstruction(),
         session,
       });
-      rpRewrite = String(out || "");
+      rpRewrite = String(out.text || "");
       if (!rpOut.textContent) rpOut.textContent = rpRewrite;
       // Show inline diff against the original selection.
-      if (currentSelection.text && rpRewrite && currentSelection.text !== rpRewrite) {
-        rpOut.innerHTML = renderDiffHtml(currentSelection.text, rpRewrite);
+      if (panelSelection.text && rpRewrite && panelSelection.text !== rpRewrite) {
+        rpOut.innerHTML = renderDiffHtml(panelSelection.text, rpRewrite);
       }
-      rpApply.hidden = false;
-      rpRegen.hidden = false;
-      rpGo.hidden = true;
+      if (out.truncated) {
+        // A cut-off rewrite must never be applied over the selection —
+        // it would replace the user's text with a fragment.
+        rpRewrite = "";
+        rpOut.innerHTML +=
+          '<div class="rp-too-short">⚠ The rewrite was cut off at the ' +
+          'length limit — try a shorter selection.</div>';
+        rpApply.hidden = true;
+        rpRegen.hidden = false;
+        rpGo.hidden = true;
+      } else {
+        rpApply.hidden = false;
+        rpRegen.hidden = false;
+        rpGo.hidden = true;
+      }
     } catch (err) {
       rpOut.textContent = "error: " + String(err);
       rpGo.disabled = false;
@@ -820,8 +851,10 @@
   rpGo.addEventListener("click", runRewritePanel);
   rpRegen.addEventListener("click", runRewritePanel);
   rpApply.addEventListener("click", async () => {
-    if (!currentSelection || !rpRewrite) return;
-    const { start, end, text: orig } = currentSelection;
+    // Apply over the SNAPSHOT taken when the panel opened — the live
+    // currentSelection may have moved to a different span since.
+    if (!panelSelection || !rpRewrite) return;
+    const { start, end, text: orig } = panelSelection;
     const chars = [...currentText];
     const applied = chars.slice(0, start).join("") + rpRewrite + chars.slice(end).join("");
     try {
