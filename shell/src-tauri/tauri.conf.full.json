@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
     },
     "withGlobalTauri": true,
     "macOSPrivateApi": true
@@ -37,14 +37,15 @@
     ],
     "resources": [
       "resources/lfm2.5-350m-q4_k_m.gguf",
-      "resources/nib-qwen-v2-q4_k_m.gguf",
+      "resources/qwen2.5-1.5b-instruct-q4_k_m.gguf",
+      "resources/nib-faithful-f16.gguf",
       "resources/qvac/*",
       "icons/tray-icon.png",
       "icons/tray-icon@2x.png"
     ],
     "category": "Productivity",
     "shortDescription": "Nib — local-first grammar assistant (Full)",
-    "longDescription": "Nib Full edition. Ships LFM2.5-350M (fast/light, default) and Nib-Qwen v2 (Qwen 2.5-1.5B fine-tuned for faithful rewrites — 70% pass rate on our internal eval, up from 34%) pre-bundled. Pick your model in Settings without downloading anything.",
+    "longDescription": "Nib Full edition. Ships LFM2.5-350M (fast/light, default) and Nib-Faithful (Qwen 2.5-1.5B base + RSFT LoRA adapter for faithful rewrites — 88.9% on our held-out eval, up from 64.4% for the stock base) pre-bundled. Pick your model in Settings without downloading anything.",
     "macOS": {
       "minimumSystemVersion": "13.0",
       "frameworks": [],

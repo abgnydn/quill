@@ -1,0 +1,11 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay",
+  "description": "Overlay-window capabilities — least privilege: the overlay renders foreign-app text, so it only gets event listen/unlisten plus core defaults (app commands like apply_suggestion/rewrite/overlay_ping are allowed to all webviews by default). Notably no global-shortcut permissions.",
+  "windows": ["overlay"],
+  "permissions": [
+    "core:default",
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}
