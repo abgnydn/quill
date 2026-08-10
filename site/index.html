@@ -4,14 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Nib — local-first grammar &amp; writing assistant for macOS</title>
-  <meta name="description" content="Nib pairs the Harper rule engine with a small on-device LLM to catch mistakes and rewrite sentences across every macOS app — 100% local, no account, no network calls.">
+  <meta name="description" content="Nib pairs the Harper rule engine with a small on-device LLM to catch mistakes and rewrite sentences across every macOS app — checking and rewrites 100% on-device, no account.">
   <meta name="theme-color" content="#141329">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="canonical" href="https://nib.pages.dev/">
   <meta property="og:type" content="website">
   <meta property="og:title" content="Nib — local-first grammar &amp; writing assistant for macOS">
-  <meta property="og:description" content="Harper rules + a small on-device LLM. Catches mistakes and rewrites sentences across every macOS app. 100% local, no account.">
+  <meta property="og:description" content="Harper rules + a small on-device LLM. Catches mistakes and rewrites sentences across every macOS app. Checking and rewrites 100% on-device, no account.">
   <meta property="og:url" content="https://nib.pages.dev/">
+  <meta property="og:image" content="https://nib.pages.dev/og.png">
+  <meta name="twitter:card" content="summary_large_image">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -38,7 +40,7 @@
         <p class="lede">
           Nib pairs the <strong>Harper</strong> rule engine with a small <strong>on-device LLM</strong>
           to catch mistakes and rewrite whole sentences — across every app, with
-          <strong>zero network calls</strong> and no account.
+          <strong>zero network calls for checks and rewrites</strong> and no account.
         </p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="https://github.com/abgnydn/nib">View on GitHub</a>
@@ -84,8 +86,9 @@
         </article>
         <article class="card">
           <h3>100% on your Mac</h3>
-          <p>No servers, no account, no telemetry. Your words never touch a network — the model
-             runs entirely on-device through <code>llama.cpp</code>.</p>
+          <p>No servers, no account, no telemetry. Checking and rewrites never touch a network —
+             the model runs entirely on-device through <code>llama.cpp</code>. The only network
+             use is fetching models from Hugging&nbsp;Face/GitHub.</p>
         </article>
         <article class="card">
           <h3>Works in every app</h3>
@@ -100,7 +103,7 @@
         <article class="card">
           <h3>Learns your voice</h3>
           <p>Accepted edits land in a private on-device journal that can fine-tune a personal LoRA —
-             trained locally, never uploaded.</p>
+             trained locally by default; cloud training is strictly opt-in.</p>
         </article>
         <article class="card">
           <h3>Faithful rewrites</h3>
@@ -175,9 +178,9 @@
       <div class="privacy">
         <p>
           Every accepted suggestion and AI rewrite is stored in a local edit journal at
-          <code>~/Library/Application&nbsp;Support/Nib/journal.jsonl</code> — and never sent anywhere.
-          That journal is what trains your personal adapter, on your own machine. Nothing about your
-          writing leaves the Mac.
+          <code>~/Library/Application&nbsp;Support/Nib/journal.jsonl</code>. That journal is what
+          trains your personal adapter — on your own machine by default; it leaves the Mac only if
+          you explicitly choose the optional cloud-training run.
         </p>
       </div>
     </section>

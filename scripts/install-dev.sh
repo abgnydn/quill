@@ -4,8 +4,10 @@
 #   Why this exists: each rebuild needs to (a) kill any running Nib, (b)
 #   replace ~/Applications/Nib.app, (c) re-codesign with the stable
 #   `app.nib` identifier so the TCC Accessibility grant survives, and
-#   (d) launch a fresh process with stderr piped to /tmp/nib.log so the
-#   focus-tracker + arbiter logs are tailable.
+#   (d) launch a fresh process with stderr piped to ~/Library/Logs/nib.log
+#   so the focus-tracker + arbiter logs are tailable. (The log carries
+#   fragments of the user's prose, so it lives in the user's home — not
+#   world-readable, symlink-attackable /tmp.)
 #
 #   Usage:
 #       ./scripts/install-dev.sh                # uses the existing build
@@ -30,7 +32,8 @@ APP_NAME="Nib.app"
 BUILT_APP="$REPO_ROOT/shell/src-tauri/target/release/bundle/macos/$APP_NAME"
 INSTALL_DIR="$HOME/Applications"
 INSTALL_PATH="$INSTALL_DIR/$APP_NAME"
-LOG="/tmp/nib.log"
+LOG_DIR="$HOME/Library/Logs"
+LOG="$LOG_DIR/nib.log"
 QVAC_CACHE="$HOME/.cache/qvac/qvac-fabric-llm.cpp"
 QVAC_RESOURCES="$REPO_ROOT/shell/src-tauri/resources/qvac"
 
@@ -40,10 +43,16 @@ QVAC_RESOURCES="$REPO_ROOT/shell/src-tauri/resources/qvac"
 # touches /Applications or user docs, only build artifacts + /tmp + the
 # residual /Volumes mounts left by testing previous .dmgs.
 cleanup_old_versions() {
-  # 1. Eject any /Volumes/Nib* — testers leave these mounted.
+  # 0. Kill any running Nib first — a copy running from a mounted DMG keeps
+  #    the volume busy, which would make the ejects below fail.
+  pkill -9 -f "$APP_NAME/Contents/MacOS/nib" 2>/dev/null || true
+  sleep 1
+  # 1. Eject any /Volumes/Nib* — testers leave these mounted. Best-effort:
+  #    a busy volume (Finder window open, etc.) must not abort the install.
   for v in /Volumes/Nib*; do
     [[ -d "$v" ]] || continue
-    diskutil eject "$v" 2>&1 | head -1
+    diskutil eject "$v" 2>&1 | head -1 || \
+      echo "[nib] warning: could not eject $v (busy?) — continuing"
   done
   # 2. Remove stale staging DMGs in /tmp (we always rebuild a fresh one).
   rm -f /tmp/Nib_*.dmg /tmp/Quill_*.dmg 2>/dev/null
@@ -168,7 +177,9 @@ echo "[nib] ad-hoc codesign with stable identifier…"
 codesign --force --deep --sign - "$INSTALL_PATH" 2>&1 | tail -1
 codesign --display --verbose=2 "$INSTALL_PATH" 2>&1 | grep -E "Identifier|Signature" || true
 
+mkdir -p "$LOG_DIR"
 rm -f "$LOG"
+( umask 077; : > "$LOG" )   # pre-create 0600 — the log carries prose fragments
 echo "[nib] launching with stderr → $LOG"
 "$INSTALL_PATH/Contents/MacOS/nib" > "$LOG" 2>&1 &
 NIB_PID=$!

@@ -59,12 +59,18 @@ Settings shows what's installed:
 | Tier | Model | Notes | Size |
 |---|---|---|---|
 | **Default** | LFM2.5-350M-Instruct | bundled in the `.app`; fast, best for grammar fixes | ~219 MB |
-| **Premium** | Qwen 2.5-1.5B + **Nib-Faithful LoRA** | preserves facts/numbers/technical tokens; **88.9%** on our held-out eval vs **64.4%** for stock Qwen | base ~940 MB (download once) + adapter ~36 MB |
+| **Premium** | Qwen 2.5-1.5B + **Nib-Faithful LoRA** | preserves facts/numbers/technical tokens; **88.9%** on the 90-case held-out eval (v2.2 adapter) vs **64.4%** for stock Qwen | base ~940 MB (download once) + adapter ~36 MB |
 
 The premium tier is an adapter applied at runtime on top of the shared Qwen
 base — every future iteration ships as a tiny adapter swap. How that adapter is
 trained (a $0 rejection-sampling self-play loop) is documented in
 [`train/RSFT_BOOTSTRAP.md`](train/RSFT_BOOTSTRAP.md).
+
+> **Known gap:** the in-app download for the adapter points at a `v2.1.0`
+> GitHub release asset (`nib-faithful-f16.gguf`) that hasn't been published
+> yet — until `gh release create v2.1.0 nib-faithful-f16.gguf` happens (ship
+> the v2.2 adapter under that name), the premium download fails with a clear
+> error. The Qwen base download from Hugging Face works today.
 
 ## Architecture
 
@@ -149,9 +155,12 @@ adapter** on top of the base model. Two backends, picked automatically:
 - **Local (preferred, free, on-device):** when the QVAC Fabric binaries are
   bundled, Nib shells out to `llama-finetune-lora` on Metal (~5 min, $0). This
   is base-model-agnostic — it trains on whatever model you're running.
-- **Modal (fallback):** spawns a cloud job (needs `HF_TOKEN`). *Note: the
-  current Modal personal script is a legacy Gemma path and is being rebased onto
-  the v2.x models — prefer the local path.*
+- **Modal (fallback, strictly opt-in):** spawns a cloud job (needs `HF_TOKEN`
+  **and** `allow_cloud_training: true` in
+  `~/Library/Application Support/Nib/config.json` — it uploads your edit
+  journal to a cloud GPU, so it is never used implicitly). *Note: the current
+  Modal personal script is a legacy Gemma path and is being rebased onto the
+  v2.x models — prefer the local path.*
 
 Auto-retrain can run in the background once a configurable number of new edits
 accumulate (Settings → personalization). After training, the new adapter loads
@@ -191,7 +200,7 @@ beside the field lists every suggestion and click-to-fix works everywhere.
 ./scripts/test.sh            # Rust lib tests + Python AST-parse + JS --check
 ```
 
-Rust: ~64 tests (+2 ignored) with `--features llm,overlay` on macOS — covering
+Rust: ~67 tests (+2 ignored) with `--features llm,overlay` on macOS — covering
 Harper integration and the curated/extra rule set, the IPC wire-format contract,
 the AXUI bounds-plausibility filter (rejects garbage like
 `x=-1, y=-17899, w=1711, h=19017`), the engagement policy (terminals/IDEs/URL
@@ -211,6 +220,9 @@ model+adapter load and run only when `NIB_TEST_MODEL` points at a `.gguf`.
   (the local QVAC path already works).
 - **Per-app coverage matrix** — push the compatibility table from ~50% to ~95%
   of common apps.
+- **Multi-display overlay.** The overlay is one fixed window on the primary
+  display today; secondary displays get suggestions only via the fallback
+  panel. Needs a window per display.
 
 ## License
 

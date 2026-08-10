@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Nib — run the entire automated test suite.
 #
-#   - Rust:   `cargo test --features llm,overlay --lib`   (~64 tests, +2 ignored, macOS)
+#   - Rust:   `cargo test --features llm,overlay --lib`   (~67 tests, +2 ignored, macOS)
 #   - Python: AST-parse every train/ script               (all train/**/*.py)
 #   - Optional: `--with-model` runs the gated full-model test
 #               (requires NIB_TEST_MODEL=path/to/.gguf set).
@@ -64,9 +64,13 @@ done
 ok "$(ls "$REPO"/scripts/*.sh | wc -l | tr -d ' ') shell scripts parsed cleanly"
 
 bold "== overlay frontend =="
-if [[ -f "$REPO/shell/src/overlay.js" ]] && command -v node >/dev/null 2>&1; then
-  node --check "$REPO/shell/src/overlay.js" 2>/dev/null && ok "overlay.js parses"
-  node --check "$REPO/shell/src/main.js"    2>/dev/null && ok "main.js parses"
+if command -v node >/dev/null 2>&1; then
+  node --check "$REPO/shell/src/overlay.js" || fail "overlay.js syntax error"
+  ok "overlay.js parses"
+  node --check "$REPO/shell/src/main.js" || fail "main.js syntax error"
+  ok "main.js parses"
+else
+  echo "  skipped (node not installed) — CI still runs node --check"
 fi
 
 bold "== all green =="

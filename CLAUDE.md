@@ -49,8 +49,14 @@ Two-stage check:
 The premium adapter layers on the shared Qwen base via llama.cpp's
 `lora_adapter_init` — future generations ship as adapter swaps, no base
 re-download. The default build (`tauri.conf.json`) bundles only LFM2.5 +
-`resources/qvac/*`; the adapter is fetched from its GitHub release URL (the
-`tauri.conf.full.json` variant pre-bundles both).
+`resources/qvac/*`; selecting the premium tier downloads the Qwen base from
+Hugging Face and then the adapter from its GitHub release URL (the download
+queue in `models.rs` fetches both in order). **The `v2.1.0` release with
+`nib-faithful-f16.gguf` is not published yet** — until it is, the adapter
+download 404s (surfaced as a clear error; the hardened `curl --fail` path
+never installs an error page as a model). `tauri.conf.full.json` builds
+instead pre-bundle base + adapter from `resources/` (see
+`shell/src-tauri/resources/README.md`).
 
 ## Layout
 
@@ -113,7 +119,7 @@ The arc, oldest → newest:
   self-play on Qwen lifts a 90-case held-out benchmark 64.4% → 83.3% → 88.9%,
   then a negative-control 4th generation plateaus (87.8%) — proving the loop
   only compounds with new injected signal, not pure self-resampling.
-- ✅ Tests green via `./scripts/test.sh` (~64 Rust + 2 ignored, Python AST,
+- ✅ Tests green via `./scripts/test.sh` (~67 Rust + 2 ignored, Python AST,
   JS `--check`). The same checks run in CI on every push/PR
   (`.github/workflows/ci.yml`): a **linux** job for the non-overlay Rust suite
   (`--features llm`) plus the Python/JS/shell checks, and a **macos** job for the
@@ -129,11 +135,12 @@ Volatile state lives in `git log -10` and
 `~/Library/Application Support/Nib/{journal.jsonl,config.json}`. This block
 is the current *direction*, not the current commit.
 
-1. **Verify state:** `cd ~/quill && git log -3 --oneline`, then
+1. **Verify state:** `cd` into the clone (`~/quill` on the author's original
+   machine, `~/dev/nib` on newer setups) `&& git log -3 --oneline`, then
    `pgrep -fl Nib.app/Contents/MacOS/nib`. If Nib isn't running, reinstall:
    `./scripts/install-dev.sh --build` (first build on a fresh machine also
    `cmake --build`s QVAC into `~/.cache/qvac/`, ~5 min one-time).
-2. **Run tests:** `./scripts/test.sh` — ~64 + 2 ignored. A drop is a regression.
+2. **Run tests:** `./scripts/test.sh` — ~67 + 2 ignored. A drop is a regression.
    (CI re-runs these on every push via `.github/workflows/ci.yml`: linux for the
    non-overlay suite + py/js/sh, macos for the overlay.)
 3. **Open threads, roughly in priority order:**
@@ -166,11 +173,22 @@ is the current *direction*, not the current commit.
   ~80 MB north star — BitNet is the path back toward it.
 - Cargo `default = []` — a bare `cargo build` is Harper-only; the real app
   needs `--features llm,overlay`.
-- `training.rs` hardcodes `~/quill/train` as the train dir (single-user
-  assumption) — needs a config override before anyone but the author can use
-  the Modal path.
-- Harper's `Span<char>` uses Unicode char offsets, which differ from JS UTF-16
-  offsets on non-BMP chars. Fine for English ASCII; will break on emoji/CJK.
+- **Publish the `v2.1.0` release asset**: `gh release create v2.1.0` with the
+  v2.2 adapter exported as `nib-faithful-f16.gguf` — the in-app premium
+  download points there and 404s until it exists.
+- The Modal train dir resolves `NIB_TRAIN_DIR` → `~/quill/train` →
+  `~/dev/nib/train` (see `training::default_train_dir`). The whole Modal path
+  is additionally gated behind the `allow_cloud_training` config flag
+  (default **off** — the journal is the user's typed text and must not be
+  uploaded implicitly).
+- The AXUI apply path now converts Harper's char offsets to UTF-16 for
+  `kAXSelectedTextRangeAttribute` (emoji/CJK-safe). The overlay *rendering*
+  path (`bounds_for_range`) still passes char offsets — underline positions
+  can drift after non-BMP chars even though applies land correctly.
+- The overlay is a single fixed 4096×3072 window anchored at the primary
+  display; secondary displays get no underlines (the plausibility gate also
+  rejects far-negative global coords). Multi-display needs per-display
+  windows.
 - Replace the placeholder solid-color RGBA icons with a real icon set.
 
 ## References
