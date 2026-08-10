@@ -18,6 +18,9 @@ dependencies = [
     # LLM-judge for eval/run_eval.py --judge (and eval/modal_eval.py). A recent
     # version is best (structured outputs); the judge degrades gracefully on older.
     "anthropic>=0.40",
+    # Cloud orchestration for eval/modal_eval.py + modal_*.py (Modal 1.x API:
+    # Image.add_local_dir replaced the removed modal.Mount / mounts=).
+    "modal>=1.0",
     # Linux/Windows-only — unsloth needs Triton (no macOS support yet).
     # Mac users: prep + eval still work locally; run train.py on Colab T4 instead.
     "unsloth>=2025.10; sys_platform != 'darwin'",

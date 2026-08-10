@@ -71,7 +71,7 @@ def main() -> None:
     # 4. Merge new adapter, run llama.cpp convert + quantize → args.out
     # 5. Drop result into ~/quill/shell/src-tauri/resources/ and notify Quill
 
-    print(f"[quill.train_personal] phase 1 done — phase 2 (actual training) is the next session")
+    print("[quill.train_personal] phase 1 done — phase 2 (actual training) is the next session")
     print(f"[quill.train_personal] would produce {args.out}")
 
 

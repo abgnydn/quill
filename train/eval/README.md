@@ -17,7 +17,10 @@ For each case in `cases.jsonl` (50 in-distribution) or `cases-holdout-90.jsonl`
   `"committed to ensuring"`)
 - **KEEP**: every `must_keep` term is preserved — semantic match (harness v2),
   so `Sept 9` ≡ `September 9`, `$1.85M` ≡ `$1.85 million`, while exact tokens
-  like `$47.30`, `12%`, `/v2/search` are kept verbatim
+  like `$47.30`, `12%`, `/v2/search` are kept verbatim. Variants are
+  word-boundary matched by default (`45` no longer matches inside `450`);
+  `--legacy-keep-match` restores the old substring containment that produced
+  the reports in `train/reports/`
 
 A case **passes** iff all three hold. The prompt template + instruction mirror
 `shell/src/overlay.js → composeInstruction()`, so the score tracks what a user
@@ -25,8 +28,8 @@ sees in the rewrite panel. Generation goes through Nib's own `nib-rewrite`
 binary (same llama-cpp-2 engine as the app).
 
 ```bash
-# Build the inference binary once:
-( cd ../../shell/src-tauri && cargo build --release --features llm --bin nib-rewrite )
+# Build the inference binary once (release-dev matches run_eval.py's default binary path):
+( cd ../../shell/src-tauri && cargo build --profile release-dev --features llm --bin nib-rewrite )
 
 # Stock Qwen base vs base + Nib-Faithful adapter:
 python run_eval.py --model qwen2.5-1.5b-instruct-q4_k_m.gguf \

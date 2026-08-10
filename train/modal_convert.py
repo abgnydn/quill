@@ -102,7 +102,7 @@ def convert(checkpoint: str = "auto") -> dict:
 
     print(f"[nib] applying LoRA from {ckpt_path} …")
     model = PeftModel.from_pretrained(base, str(ckpt_path))
-    print(f"[nib] merging LoRA into base weights …")
+    print("[nib] merging LoRA into base weights …")
     merged = model.merge_and_unload()
 
     MERGED = Path("/artifacts/merged-16bit")
@@ -111,7 +111,7 @@ def convert(checkpoint: str = "auto") -> dict:
     merged.save_pretrained(str(MERGED), safe_serialization=True)
     tok.save_pretrained(str(MERGED))
     print(f"[nib] merged 16-bit HF saved to {MERGED}")
-    print(f"[nib] merged dir size: ", end="")
+    print("[nib] merged dir size: ", end="")
     subprocess.run(["du", "-sh", str(MERGED)], check=True)
 
     # --- llama.cpp converter -------------------------------------------------
@@ -128,7 +128,7 @@ def convert(checkpoint: str = "auto") -> dict:
     )
 
     F16_GGUF = Path("/artifacts/nib-f16.gguf")
-    print(f"[nib] converting HF → GGUF f16 …")
+    print("[nib] converting HF → GGUF f16 …")
     t1 = time.time()
     subprocess.run(
         ["python", str(LLAMA_DIR / "convert_hf_to_gguf.py"),
@@ -138,7 +138,7 @@ def convert(checkpoint: str = "auto") -> dict:
     print(f"[nib] f16 GGUF written in {time.time() - t1:.1f}s: ", end="")
     subprocess.run(["du", "-h", str(F16_GGUF)], check=True)
 
-    print(f"[nib] building llama-quantize …")
+    print("[nib] building llama-quantize …")
     subprocess.run(
         ["cmake", "-B", "build",
          "-DGGML_NATIVE=OFF",
@@ -154,7 +154,7 @@ def convert(checkpoint: str = "auto") -> dict:
     )
 
     Q4_GGUF = Path("/artifacts/nib-q4_k_m.gguf")
-    print(f"[nib] quantizing → q4_k_m …")
+    print("[nib] quantizing → q4_k_m …")
     subprocess.run(
         [str(LLAMA_DIR / "build" / "bin" / "llama-quantize"),
          str(F16_GGUF), str(Q4_GGUF), "q4_k_m"],

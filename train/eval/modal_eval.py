@@ -21,6 +21,10 @@ Run:
     modal run train/eval/modal_eval.py --limit 8       # quick smoke test
     modal run train/eval/modal_eval.py --no-judge      # constraint-only (no API key needed)
     modal run train/eval/modal_eval.py --judge-model claude-sonnet-4-6
+    modal run train/eval/modal_eval.py --adapter-url https://…/nib-faithful-f16.gguf
+                                                       # adapter from a custom URL (the
+                                                       # default v2.1.0 release URL is
+                                                       # not published yet)
 
 Notes:
   - First run compiles llama.cpp + Tauri (~5-10 min) and downloads the 940 MB
@@ -41,8 +45,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # — the exact files models.rs resolves at runtime.
 QWEN_URL = ("https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/"
             "qwen2.5-1.5b-instruct-q4_k_m.gguf?download=true")
-ADAPTER_URL = ("https://github.com/abgnydn/nib/releases/download/v2.1.0/"
-               "nib-faithful-f16.gguf")
+# Default adapter URL. NOTE: the v2.1.0 GitHub release is not yet published,
+# so this default 404s until it lands — pass --adapter-url to point at
+# wherever the adapter GGUF actually lives (any https URL curl can fetch).
+DEFAULT_ADAPTER_URL = ("https://github.com/abgnydn/nib/releases/download/v2.1.0/"
+                       "nib-faithful-f16.gguf")
 
 # Image: Rust + cmake/C++ to build nib-rewrite (which links Tauri, hence the
 # GTK/WebKit -dev libs even though this binary never opens a window), plus the
@@ -58,20 +65,20 @@ image = (
     .run_commands("curl https://sh.rustup.rs -sSf | sh -s -- -y --profile minimal")
     .env({"PATH": "/root/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"})
     .pip_install("anthropic", "huggingface_hub")
+    # Repo source (minus build artifacts + big binaries) is attached fresh each
+    # run so we always build the exact local code. (Modal 1.x: add_local_dir on
+    # the Image replaced the removed modal.Mount / mounts= API.)
+    .add_local_dir(
+        str(REPO_ROOT),
+        remote_path="/root/quill",
+        ignore=[
+            "**/target/**", "**/.git/**", "**/node_modules/**",
+            "**/*.gguf", "**/*.dmg",
+        ],
+    )
 )
 
 app = modal.App("nib-eval", image=image)
-
-# Repo source (minus build artifacts + big binaries) is mounted fresh each run
-# so we always build the exact local code.
-repo_mount = modal.Mount.from_local_dir(
-    str(REPO_ROOT),
-    remote_path="/root/quill",
-    condition=lambda p: not (
-        "/target/" in p or "/.git/" in p or "/node_modules/" in p
-        or p.endswith(".gguf") or p.endswith(".dmg")
-    ),
-)
 
 # Persists the GGUFs and the cargo target dir across runs.
 cache = modal.Volume.from_name("nib-eval-cache", create_if_missing=True)
@@ -102,21 +109,39 @@ def _eval_one(binary: str, base: str, adapter, label: str, cases: str,
 
 
 @app.function(
-    mounts=[repo_mount],
     volumes={"/cache": cache},
     secrets=[modal.Secret.from_name("nib-eval")],
     cpu=4.0,
     memory=8192,
     timeout=2 * 60 * 60,
 )
-def run(limit: int = 0, judge: bool = True, judge_model: str = "claude-opus-4-8") -> dict:
+def run(
+    limit: int = 0,
+    judge: bool = True,
+    judge_model: str = "claude-opus-4-8",
+    adapter_url: str = DEFAULT_ADAPTER_URL,
+) -> dict:
     import subprocess
+
+    # 0. Fail fast on a misconfigured secret — BEFORE the 5-10 min build and
+    # the ~1 GB of downloads burn the whole warm-up.
+    if judge and not os.environ.get("ANTHROPIC_API_KEY"):
+        raise RuntimeError(
+            "ANTHROPIC_API_KEY not in the `nib-eval` secret — run with --no-judge "
+            "or `modal secret create nib-eval ANTHROPIC_API_KEY=sk-ant-...`"
+        )
 
     src = "/root/quill/shell/src-tauri"
     cases = "/root/quill/train/eval/cases-holdout-90.jsonl"
     env = {**os.environ, "CARGO_TARGET_DIR": "/cache/target"}
 
     # 1. Build the production inference binary (incremental — fast after run 1).
+    # tauri_build::build() validates that every bundle resource in
+    # tauri.conf.json exists, but the repo attach filter excludes *.gguf —
+    # stub the bundled model file first (mirrors the CI touch step).
+    stub = Path(src, "resources", "lfm2.5-350m-q4_k_m.gguf")
+    stub.parent.mkdir(parents=True, exist_ok=True)
+    stub.touch()
     print("[modal-eval] building nib-rewrite (cargo --features llm)…", flush=True)
     subprocess.run(
         ["cargo", "build", "--release", "--locked", "--features", "llm", "--bin", "nib-rewrite"],
@@ -128,18 +153,13 @@ def run(limit: int = 0, judge: bool = True, judge_model: str = "claude-opus-4-8"
     # 2. Fetch the GGUFs into the cache volume (skip if already there).
     base = "/cache/qwen2.5-1.5b-instruct-q4_k_m.gguf"
     adapter = "/cache/nib-faithful-f16.gguf"
-    for path, url in ((base, QWEN_URL), (adapter, ADAPTER_URL)):
+    for path, url in ((base, QWEN_URL), (adapter, adapter_url)):
         if not Path(path).exists():
             print(f"[modal-eval] downloading {Path(path).name}…", flush=True)
             subprocess.run(["curl", "-fL", "-o", path, url], check=True)
     cache.commit()
 
     # 3. Eval the stock base and the base+LoRA, both judged.
-    if judge and not os.environ.get("ANTHROPIC_API_KEY"):
-        raise RuntimeError(
-            "ANTHROPIC_API_KEY not in the `nib-eval` secret — run with --no-judge "
-            "or `modal secret create nib-eval ANTHROPIC_API_KEY=sk-ant-...`"
-        )
     base_rep = _eval_one(binary, base, None, "qwen-base", cases, limit, judge, judge_model)
     adapter_rep = _eval_one(binary, base, adapter, "nib-faithful-v2", cases, limit, judge, judge_model)
     return {"base": base_rep, "adapter": adapter_rep}
@@ -158,8 +178,16 @@ def _fmt(rep: dict) -> str:
 
 
 @app.local_entrypoint()
-def main(limit: int = 0, no_judge: bool = False, judge_model: str = "claude-opus-4-8"):
-    res = run.remote(limit=limit, judge=not no_judge, judge_model=judge_model)
+def main(
+    limit: int = 0,
+    no_judge: bool = False,
+    judge_model: str = "claude-opus-4-8",
+    adapter_url: str = DEFAULT_ADAPTER_URL,
+):
+    res = run.remote(
+        limit=limit, judge=not no_judge, judge_model=judge_model,
+        adapter_url=adapter_url,
+    )
     print("\n=== Nib held-out eval (constraint + Claude judge) ===")
     print(_fmt(res["base"]))
     print(_fmt(res["adapter"]))

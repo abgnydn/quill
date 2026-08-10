@@ -80,18 +80,23 @@ train/
 ```bash
 git clone https://github.com/abgnydn/nib && cd nib/train
 
-# Eval an adapter against held-out cases (needs the nib-rewrite binary built
-# from ../shell/src-tauri with --features llm):
+# Build the nib-rewrite binary the harness shells out to (the default
+# binary path expects the release-dev profile):
+( cd ../shell/src-tauri && \
+  touch resources/lfm2.5-350m-q4_k_m.gguf && \
+  cargo build --profile release-dev --features llm --bin nib-rewrite )
+
+# Eval an adapter against held-out cases:
 python eval/run_eval.py \
     --model  <qwen-base.gguf> \
     --adapter <your-adapter.gguf> \
     --cases  eval/cases-holdout-90.jsonl \
     --label  your-run
 
-# Run an RSFT round:
+# Run an RSFT round (omit --adapter for round 1):
 python scripts/sample_completions.py \
     --model   <qwen-base.gguf> \
-    --adapter <previous-adapter.gguf>   # omit for round 1 \
+    --adapter <previous-adapter.gguf> \
     --seeds   your-seeds.jsonl \
     --n-samples 12 \
     --out     your-round.jsonl

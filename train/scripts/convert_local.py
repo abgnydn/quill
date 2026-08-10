@@ -92,7 +92,7 @@ def main() -> None:
             device_map="cpu",
         )
         tok = AutoTokenizer.from_pretrained(args.base)
-        print(f"  attaching adapter and merging …", flush=True)
+        print("  attaching adapter and merging …", flush=True)
         model = PeftModel.from_pretrained(base, str(ckpt))
         merged = model.merge_and_unload()
         merged.save_pretrained(str(merged_dir), safe_serialization=True)

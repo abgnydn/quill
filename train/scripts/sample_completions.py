@@ -16,9 +16,6 @@ Usage:
       --n-samples 8 \\
       --out ../data/rsft-round1.jsonl
 
-Optionally augment seeds with a public dataset:
-    --add-finedit  pulls 200 random prompts from FineEdit_bench
-
 Each candidate is scored via the eval harness's `score_output` function
 re-used as a library — same checks as the harness, single source of
 truth.
@@ -61,7 +58,25 @@ def all_tone_combos() -> list[tuple[str | None, str | None]]:
 def load_seeds(path: str) -> list[dict[str, Any]]:
     """Load eval-format cases (with source/tone/formality/constraints).
     The same cases.jsonl works as a seed pool — we'll over-sample on top."""
-    return [json.loads(l) for l in open(path) if l.strip()]
+    return [json.loads(line) for line in open(path) if line.strip()]
+
+
+def load_holdout_sources() -> set[str]:
+    """Sources of every eval/cases-holdout*.jsonl — the held-out benchmark.
+    Training data must never be generated from these, or every subsequent
+    holdout score is invalid."""
+    sources: set[str] = set()
+    for path in sorted((Path(__file__).parent.parent / "eval").glob("cases-holdout*.jsonl")):
+        for line in open(path):
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if row.get("source"):
+                sources.add(row["source"].strip())
+    return sources
 
 
 def synthetic_case(source: str, tone: str | None, formality: str | None) -> dict[str, Any]:
@@ -148,6 +163,20 @@ def main() -> int:
     if args.limit_seeds:
         seeds = seeds[: args.limit_seeds]
 
+    # Holdout-leakage guard: never generate training rows from the held-out
+    # benchmark sources (would silently invalidate every later holdout score).
+    holdout_sources = load_holdout_sources()
+    leaked = [s for s in seeds if s.get("source", "").strip() in holdout_sources]
+    if leaked:
+        print(f"[rsft] WARNING: {len(leaked)} seed(s) appear in "
+              f"eval/cases-holdout*.jsonl — skipping them to protect the "
+              f"held-out benchmark", file=sys.stderr)
+        seeds = [s for s in seeds if s.get("source", "").strip() not in holdout_sources]
+        if not seeds:
+            print("[rsft] every seed is a holdout case — refusing to generate "
+                  "training data from the held-out benchmark", file=sys.stderr)
+            return 2
+
     # Build (source, instruction, scoring_case) tasks list.
     tasks: list[tuple[str, str | None, dict]] = []
     for seed in seeds:
@@ -178,6 +207,8 @@ def main() -> int:
 
     n_kept = 0
     n_total = 0
+    n_dup = 0
+    seen: set[tuple[str, str]] = set()  # exact (src, tgt) dedup at write time
     t0 = time.time()
 
     for task_i, (source, instr, case) in enumerate(tasks):
@@ -196,6 +227,14 @@ def main() -> int:
             sc = score_output(case, out)
             keep = sc.ok or args.no_filter
             if keep and out.strip():
+                # Exact-duplicate filter: at temperature 0.8 many of the N
+                # samples converge to identical text; without this, easy
+                # tasks get up to N× the gradient weight of hard ones.
+                key = (source, out)
+                if key in seen:
+                    n_dup += 1
+                    continue
+                seen.add(key)
                 triple = chatml_triple(instr, source, out)
                 out_f.write(json.dumps(triple, ensure_ascii=False) + "\n")
                 out_f.flush()
@@ -210,6 +249,7 @@ def main() -> int:
     out_f.close()
     dt = time.time() - t0
     print(f"\n[rsft] done: {n_kept}/{n_total} kept ({100*n_kept/max(1,n_total):.1f}%)  "
+          f"{n_dup} exact duplicate(s) skipped  "
           f"wrote {out_path}  ({dt/60:.1f} min)")
     return 0
 
@@ -239,6 +279,17 @@ def run_model_with_sampling(
         )
     except subprocess.TimeoutExpired:
         return ""
+    if proc.returncode != 0:
+        # Infra failure (model/adapter failed to load, bad CLI arg, …) —
+        # abort instead of silently thinning the training set with "".
+        stderr_tail = "\n".join((proc.stderr or "").strip().splitlines()[-15:])
+        print(
+            f"[rsft] INFRA FAILURE: nib-rewrite exited {proc.returncode} — "
+            f"harness/model-loading problem, not a sampling miss.\n"
+            f"[rsft] stderr tail:\n{stderr_tail}",
+            file=sys.stderr,
+        )
+        raise SystemExit(3)
     return proc.stdout.strip()
 
 

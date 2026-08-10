@@ -9,13 +9,16 @@
 # ─────────────────────────────────────────────────────────────────────────────
 """Personal LoRA fine-tune on top of Quill's CoEdIT-merged base model.
 
-Takes a user journal exported from Quill's "⤓ Export" button (CoEdIT-style
+WARNING (legacy): this script trains a Gemma-3-270M adapter — NOT loadable
+on the shipped LFM2.5-350M / Qwen 2.5-1.5B bases. Legacy path pending rebase.
+
+Takes a user journal exported from Nib's "⤓ Export" button (CoEdIT-style
 `{src, tgt}` JSONL), interleaves it with random CoEdIT pairs at 50/50 to
 prevent catastrophic forgetting, runs a small LoRA on Modal L4, converts
 to GGUF, and downloads the adapter to `./checkpoints/personal-adapter.gguf`.
 
-Quill auto-detects an adapter at
-`~/Library/Application Support/Quill/personal-adapter.gguf` on next launch.
+Nib auto-detects an adapter at
+`~/Library/Application Support/Nib/personal-adapter.gguf` on next launch.
 
 USAGE (~15 min on Modal L4, ~$0.20):
 
@@ -217,7 +220,12 @@ def train_personal(
 def main(journal: str, epochs: int = 2, lr: float = 5e-5):
     """Read the journal file locally, send the bytes to Modal, train,
     download the resulting GGUF LoRA into ./checkpoints/, and print the
-    Quill install hint."""
+    Nib install hint."""
+    print("=" * 76)
+    print("WARNING: this trains a Gemma-3-270M adapter — NOT loadable on the")
+    print("shipped LFM2.5-350M / Qwen 2.5-1.5B bases; legacy path pending rebase.")
+    print("The supported personal-training path is the local QVAC backend.")
+    print("=" * 76)
     journal_path = pathlib.Path(journal).expanduser()
     if not journal_path.exists():
         raise SystemExit(f"journal not found: {journal_path}")
@@ -241,11 +249,13 @@ def main(journal: str, epochs: int = 2, lr: float = 5e-5):
         check=True,
     )
 
-    install_path = pathlib.Path.home() / "Library/Application Support/Quill/personal-adapter.gguf"
+    install_path = pathlib.Path.home() / "Library/Application Support/Nib/personal-adapter.gguf"
     install_path.parent.mkdir(parents=True, exist_ok=True)
     print()
     print(f"[quill.personal] DONE  {local_path}  ({result['gguf_size_mb']:.1f} MB)")
-    print(f"[quill.personal] to use in Quill, drop the adapter into:")
+    print("[quill.personal] to use in Nib, drop the adapter into:")
     print(f"    {install_path}")
-    print(f"[quill.personal] one-liner:")
-    print(f"    cp {local_path} '{install_path}' && killall quill 2>/dev/null; open -a Quill")
+    print("[quill.personal] one-liner:")
+    print(f"    cp {local_path} '{install_path}' && killall nib 2>/dev/null; open -a Nib")
+    print("[quill.personal] NOTE: this adapter is Gemma-3-270M-based and will "
+          "NOT load on the shipped LFM2.5/Qwen bases (legacy path pending rebase).")

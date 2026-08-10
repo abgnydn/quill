@@ -251,7 +251,7 @@ def main():
          "nib-q4_k_m.gguf", str(local_dir / "nib-q4_k_m.gguf")],
         check=True,
     )
-    print(f"[nib] also fetching the LoRA adapter dir …")
+    print("[nib] also fetching the LoRA adapter dir …")
     subprocess.run(
         ["modal", "volume", "get", "--force", "nib-artifacts",
          "gemma3-270m-coedit-lora", str(local_dir / "gemma3-270m-coedit-lora")],

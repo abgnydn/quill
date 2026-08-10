@@ -139,9 +139,10 @@ re-download.
 
 ### 5. Eval on held-out, look at what failed, write targeted seeds
 
-Each generation's failures are inspected. The `v2.2 = 93.3%` step
-above came partly from 10 hand-curated seeds (`seeds-v2_2-targeted.
-jsonl`) written specifically to cover v2.1's failure modes:
+Each generation's failures are inspected. The `v2.2 = 88.9%` step
+above (93.3% on the earlier 60-case holdout) came partly from 10
+hand-curated seeds (`seeds-v2_2-targeted.jsonl`) written
+specifically to cover v2.1's failure modes:
 scientific notation preservation (`n=X`, `p<X`, `X±Y`), abbreviation
 preservation (IATA codes, country codes, stock tickers), tight
 word-count discipline. Three of v2.1's eight held-out failures
