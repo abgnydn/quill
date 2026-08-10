@@ -8,7 +8,7 @@
 //! orchestration is its CLI tool; replicating that from Rust is far more
 //! work than just exec'ing the binary the user already has.
 
-use std::io::Read;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
@@ -57,7 +57,10 @@ struct Job {
     child: Option<Child>,
     started_at: Option<Instant>,
     state: JobState,
-    stage: Option<String>,
+    /// Last meaningful child-output line, updated by the drainer threads
+    /// (which MUST run: an unread pipe fills at ~64KB and deadlocks the
+    /// trainer). Shared so drainers don't contend on the Job mutex.
+    stage: Arc<Mutex<Option<String>>>,
     error: Option<String>,
     output_adapter: Option<PathBuf>,
     /// Working dir of the spawned process — used by the Modal backend so
@@ -66,10 +69,17 @@ struct Job {
     /// know the exact output path).
     cwd: Option<PathBuf>,
     /// Pre-known output path for backends that produce a deterministic
-    /// adapter file (i.e. the local llama-finetune-lora path, which we
-    /// pass via `--output-adapter`). Set at spawn time so status()
-    /// doesn't have to guess.
+    /// adapter file (i.e. the local llama-finetune-lora path). Set at
+    /// spawn time so status() doesn't have to guess.
     expected_output: Option<PathBuf>,
+    /// Where the trainer actually writes while running (local backend
+    /// uses `<expected_output>.part` so a crashed run can't leave a
+    /// truncated adapter at the live path). Renamed on success.
+    tmp_output: Option<PathBuf>,
+    /// Base model this job trains against — recorded into the adapter's
+    /// sidecar meta at install time so startup can refuse a mismatched
+    /// base. None for the legacy Modal backend (which trains Gemma).
+    base_model: Option<PathBuf>,
     /// Which backend this job is running on — surfaced to the UI so the
     /// user can see "training locally" vs "training on Modal".
     backend: Backend,
@@ -90,11 +100,13 @@ impl Default for Job {
             child: None,
             started_at: None,
             state: JobState::Idle,
-            stage: None,
+            stage: Arc::new(Mutex::new(None)),
             error: None,
             output_adapter: None,
             cwd: None,
             expected_output: None,
+            tmp_output: None,
+            base_model: None,
             backend: Backend::None,
         }
     }
@@ -131,15 +143,21 @@ impl std::fmt::Display for StartError {
     }
 }
 
-/// Resolve the train directory. Production .app deployments hardcode
-/// `~/quill/train` (Baris-only single-user assumption for now); v0.6 will
-/// add a config file override.
+/// Resolve the train directory for the legacy Modal backend. Checks
+/// `NIB_TRAIN_DIR`, then the author's historical `~/quill/train` clone,
+/// then the current `~/dev/nib/train` layout. Single-user assumption —
+/// this whole path is opt-in legacy (see `allow_cloud_training`).
 pub fn default_train_dir() -> Option<PathBuf> {
-    let home = std::env::var_os("HOME")?;
-    let mut p = PathBuf::from(home);
-    p.push("quill");
-    p.push("train");
-    Some(p)
+    if let Some(dir) = std::env::var_os("NIB_TRAIN_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    let home = PathBuf::from(std::env::var_os("HOME")?);
+    let candidates = [home.join("quill/train"), home.join("dev/nib/train")];
+    candidates
+        .iter()
+        .find(|p| p.exists())
+        .cloned()
+        .or_else(|| Some(candidates[0].clone()))
 }
 
 /// Try the venv binary first, fall back to PATH lookup.
@@ -202,16 +220,33 @@ impl TrainingState {
                 g.error = err;
                 // On success, point the UI at the generated adapter.
                 if new_state == JobState::Succeeded {
-                    // Prefer the pre-known output path (local backend);
-                    // fall back to the Modal cwd-relative default.
-                    let candidate = g.expected_output.clone().or_else(|| {
-                        g.cwd.as_ref().map(|c| c.join("checkpoints/personal-adapter.gguf"))
-                    });
-                    if let Some(out) = candidate {
-                        if out.exists() {
-                            g.output_adapter = Some(out);
+                    // Local backend trained into a .part file — promote it
+                    // atomically now that the run definitely succeeded.
+                    if let (Some(tmp), Some(fin)) = (&g.tmp_output, &g.expected_output) {
+                        if tmp.exists() {
+                            if let Err(e) = std::fs::rename(tmp, fin) {
+                                eprintln!("[nib][train] adapter promote failed: {e}");
+                                g.state = JobState::Failed;
+                                g.error = Some(format!("adapter promote: {e}"));
+                            }
                         }
                     }
+                    if g.state == JobState::Succeeded {
+                        // Prefer the pre-known output path (local backend);
+                        // fall back to the Modal cwd-relative default.
+                        let candidate = g.expected_output.clone().or_else(|| {
+                            g.cwd.as_ref().map(|c| c.join("checkpoints/personal-adapter.gguf"))
+                        });
+                        if let Some(out) = candidate {
+                            if out.exists() {
+                                g.output_adapter = Some(out);
+                            }
+                        }
+                    }
+                } else if let Some(tmp) = &g.tmp_output {
+                    // Failed run: drop the partial file so it can't be
+                    // mistaken for a real adapter later.
+                    let _ = std::fs::remove_file(tmp);
                 }
                 g.child = None;
             }
@@ -225,7 +260,7 @@ impl TrainingState {
         TrainingStatus {
             state: g.state.clone(),
             elapsed_secs: elapsed,
-            stage: g.stage.clone(),
+            stage: g.stage.lock().ok().and_then(|s| s.clone()),
             error: g.error.clone(),
             output_adapter: g.output_adapter.as_ref().map(|p| p.display().to_string()),
             backend: g.backend,
@@ -254,7 +289,7 @@ impl TrainingState {
             journal_path.display()
         );
 
-        let child = Command::new(&modal_bin)
+        let mut child = Command::new(&modal_bin)
             .current_dir(&train_dir)
             .env("HF_TOKEN", hf_token)
             .arg("run")
@@ -266,15 +301,20 @@ impl TrainingState {
             .spawn()
             .map_err(|e| StartError::Spawn(e.to_string()))?;
 
+        let stage = Arc::new(Mutex::new(Some("starting modal job…".to_string())));
+        spawn_drainers(&mut child, stage.clone());
+
         *g = Job {
             child: Some(child),
             started_at: Some(Instant::now()),
             state: JobState::Running,
-            stage: Some("starting modal job…".into()),
+            stage,
             error: None,
             output_adapter: None,
             cwd: Some(train_dir),
             expected_output: None,
+            tmp_output: None,
+            base_model: None,
             backend: Backend::Modal,
         };
         Ok(())
@@ -296,22 +336,36 @@ impl TrainingState {
         if g.state == JobState::Running {
             return Err(StartError::AlreadyRunning);
         }
-        let child = crate::training_local::spawn(
+        // Train into a sibling .part file — writing straight to the live
+        // personal-adapter.gguf would let an interrupted run leave a
+        // truncated adapter that breaks engine load at next startup.
+        let tmp_output = {
+            let mut s = output_adapter.as_os_str().to_os_string();
+            s.push(".part");
+            PathBuf::from(s)
+        };
+        let mut child = crate::training_local::spawn(
             &qvac_bin,
             &base_model,
             &journal_export,
-            &output_adapter,
+            &tmp_output,
         )
         .map_err(|e| StartError::Spawn(e.to_string()))?;
+
+        let stage = Arc::new(Mutex::new(Some("starting local training on Metal…".to_string())));
+        spawn_drainers(&mut child, stage.clone());
+
         *g = Job {
             child: Some(child),
             started_at: Some(Instant::now()),
             state: JobState::Running,
-            stage: Some("starting local training on Metal…".into()),
+            stage,
             error: None,
             output_adapter: None,
             cwd: None,
             expected_output: Some(output_adapter),
+            tmp_output: Some(tmp_output),
+            base_model: Some(base_model),
             backend: Backend::Local,
         };
         Ok(())
@@ -323,17 +377,36 @@ impl TrainingState {
     /// `--output-adapter`), the copy is a no-op and we just return the
     /// existing size.
     pub fn install(&self, dest: &Path) -> Result<u64, String> {
-        let src = {
+        let (src, base_model) = {
             let g = self.inner.lock().map_err(|_| "mutex".to_string())?;
-            g.output_adapter
+            let src = g.output_adapter
                 .clone()
-                .ok_or_else(|| "no adapter produced yet".to_string())?
+                .ok_or_else(|| "no adapter produced yet".to_string())?;
+            (src, g.base_model.clone())
         };
         if !src.exists() {
             return Err(format!("source missing: {}", src.display()));
         }
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        // Record which base this adapter was trained on so startup can
+        // refuse to layer it on a different one. The legacy Modal backend
+        // trains Gemma-3-270M — tag it as such so it never loads on the
+        // shipped LFM2.5/Qwen bases.
+        let trained_on = base_model
+            .as_deref()
+            .and_then(|p| p.file_name())
+            .and_then(|f| f.to_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "gemma-3-270m-it (legacy modal)".to_string());
+        let meta = serde_json::json!({
+            "base_filename": trained_on,
+            "installed_at": crate::journal::now_rfc3339(),
+        });
+        let meta_path = crate::state::adapter_meta_path(dest);
+        if let Err(e) = std::fs::write(&meta_path, meta.to_string()) {
+            eprintln!("[nib][train] could not write adapter meta {}: {e}", meta_path.display());
         }
         // Same file? Nothing to do — local backend already wrote here.
         if let (Ok(s), Ok(d)) = (src.canonicalize(), dest.canonicalize()) {
@@ -348,33 +421,57 @@ impl TrainingState {
     pub fn reset(&self) {
         if let Ok(mut g) = self.inner.lock() {
             // If a child is still alive (shouldn't be — only reset Idle/
-            // Succeeded/Failed), best-effort kill so we don't leak.
+            // Succeeded/Failed), kill AND reap it so we don't leave a
+            // zombie process table entry until app exit.
             if let Some(child) = g.child.as_mut() {
                 let _ = child.kill();
+                let _ = child.wait();
+            }
+            if let Some(tmp) = &g.tmp_output {
+                let _ = std::fs::remove_file(tmp);
             }
             *g = Job::default();
         }
     }
 }
 
-/// Side-channel: drain whatever's currently in the child's stdout (non-
-/// blocking), parse a meaningful "stage" line from the tail. Called
-/// opportunistically; safe to drop bytes since we only care about a hint.
-/// Not used in v0.5 phase 3 MVP — kept as a hook for v0.6.
-#[allow(dead_code)]
-fn drain_stage(child: &mut Child) -> Option<String> {
-    let mut buf = String::new();
-    if let Some(mut out) = child.stdout.take() {
-        let mut tmp = Vec::with_capacity(4096);
-        if out.read_to_end(&mut tmp).is_ok() {
-            buf.push_str(&String::from_utf8_lossy(&tmp));
-        }
-        child.stdout = Some(out);
+/// Consume the child's stdout + stderr on dedicated threads. MANDATORY
+/// for piped children: `modal run` and `llama-finetune-lora` both write
+/// far more than the ~64KB pipe buffer, and an unread pipe blocks the
+/// trainer forever (UI stuck on "training in progress…"). Meaningful
+/// lines land in `stage` for the status poller; everything else is
+/// forwarded to our stderr so it still shows up in the app log.
+fn spawn_drainers(child: &mut Child, stage: Arc<Mutex<Option<String>>>) {
+    let is_stage_line = |l: &str| {
+        l.contains("[nib")
+            || l.contains("trained in")
+            || l.contains("MB")
+            || l.contains("epoch")
+            || l.contains("loss")
+    };
+    for (name, reader) in [
+        ("stdout", child.stdout.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>)),
+        ("stderr", child.stderr.take().map(|s| Box::new(s) as Box<dyn std::io::Read + Send>)),
+    ] {
+        let Some(reader) = reader else { continue };
+        let stage = stage.clone();
+        let _ = std::thread::Builder::new()
+            .name(format!("nib-train-drain-{name}"))
+            .spawn(move || {
+                for line in BufReader::new(reader).lines().map_while(Result::ok) {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    eprintln!("[nib][train:{name}] {trimmed}");
+                    if is_stage_line(trimmed) {
+                        if let Ok(mut s) = stage.lock() {
+                            *s = Some(trimmed.to_string());
+                        }
+                    }
+                }
+            });
     }
-    buf.lines()
-        .filter(|l| l.contains("[nib") || l.contains("trained in") || l.contains("MB"))
-        .last()
-        .map(|s| s.trim().to_string())
 }
 
 #[cfg(test)]

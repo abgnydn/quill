@@ -97,6 +97,7 @@ pub fn convert_journal_to_chatml(src: &Path, dst: &Path) -> Result<usize, LocalS
 /// Build (don't spawn yet) the `llama-finetune-lora` command.
 /// Caller handles the actual spawn so it can stash the `Child` into
 /// `TrainingState`.
+#[allow(clippy::too_many_arguments)] // mirrors llama-finetune-lora's flag surface
 pub fn build_command(
     qvac_bin: &Path,
     base_model: &Path,

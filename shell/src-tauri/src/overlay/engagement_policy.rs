@@ -82,6 +82,14 @@ const ROLE_DESC_DENY_SUBSTRINGS: &[&str] = &[
     "search bar",
 ];
 
+/// Password / secure-entry detection. Split out of [`is_engageable`] so
+/// the focus tracker can enforce it even when a per-app ForceAllow
+/// override bypasses the rest of the policy — reading, linting, and
+/// journaling secure fields is never acceptable.
+pub fn is_secure_field(role: Option<&str>, subrole: Option<&str>) -> bool {
+    subrole == Some("AXSecureTextField") || role == Some("AXSecureTextField")
+}
+
 /// Pure decision: should the overlay engage on this focused element?
 ///
 /// Rules, in order:
@@ -98,7 +106,7 @@ pub fn is_engageable(
     bundle_id: Option<&str>,
 ) -> bool {
     if let Some(bid) = bundle_id {
-        if DENIED_BUNDLES.iter().any(|d| *d == bid) {
+        if DENIED_BUNDLES.contains(&bid) {
             return false;
         }
         if DENIED_BUNDLE_PREFIXES.iter().any(|p| bid.starts_with(p)) {
@@ -124,7 +132,7 @@ pub fn is_engageable(
     // linting. AXTextArea (real <textarea> + contenteditable composers)
     // still engages.
     if let Some(bid) = bundle_id {
-        if BROWSER_BUNDLES.iter().any(|b| *b == bid) && role == Some("AXTextField") {
+        if BROWSER_BUNDLES.contains(&bid) && role == Some("AXTextField") {
             return false;
         }
     }
@@ -254,6 +262,16 @@ mod tests {
     fn denies_password_fields() {
         assert!(!is_engageable(Some("AXTextField"), Some("AXSecureTextField"), None, Some("com.apple.Safari")));
         assert!(!is_engageable(Some("AXSecureTextField"), None, None, Some("com.apple.Safari")));
+    }
+
+    /// The dedicated secure-field check the ForceAllow override path uses —
+    /// must flag both role- and subrole-shaped secure fields.
+    #[test]
+    fn is_secure_field_detects_both_shapes() {
+        assert!(is_secure_field(None, Some("AXSecureTextField")));
+        assert!(is_secure_field(Some("AXSecureTextField"), None));
+        assert!(!is_secure_field(Some("AXTextField"), None));
+        assert!(!is_secure_field(None, None));
     }
 
     #[test]

@@ -16,10 +16,10 @@ use crate::inference;
 /// Selection rationale (from auditing `harper-core-2.0.0/src/linting/lint_group/mod.rs`,
 /// the off-by-default set is small — only 7 rules):
 /// - `BoringWords`     — flags "very / interesting / several / most / many",
-///                       low-noise nudge toward stronger word choice.
+///   low-noise nudge toward stronger word choice.
 /// - `PossessiveNoun`  — catches missing-apostrophe possessives ("the dogs bone").
 /// - `SpelledNumbers`  — suggests spelling out integers < 10
-///                       (`I have 3 cats.` -> `I have three cats.`).
+///   (`I have 3 cats.` -> `I have three cats.`).
 ///
 /// Deliberately left OFF (would be noisy or wrong for casual writing):
 /// - `NoOxfordComma` — conflicts with the curated `OxfordComma` rule.
@@ -62,11 +62,27 @@ pub struct RewriteState {
 #[cfg(feature = "llm")]
 impl RewriteState {
     pub fn from_path(path: Option<std::path::PathBuf>) -> Self {
-        Self::from_paths(path, personal_adapter_path())
+        let adapter = personal_adapter_path().filter(|p| p.exists());
+        // Skip a personal adapter trained against a different base model —
+        // llama.cpp either refuses it or (worse) silently degrades output.
+        let adapter = match (&path, adapter) {
+            (Some(base), Some(ad)) if !personal_adapter_compatible(base, &ad) => {
+                eprintln!(
+                    "[nib] personal adapter at {} was trained on a different \
+                     base model — skipping it (retrain to re-enable)",
+                    ad.display()
+                );
+                None
+            }
+            (_, ad) => ad,
+        };
+        Self::from_paths(path, adapter)
     }
 
     /// Load the base model and optionally a personal LoRA adapter on top.
-    /// `adapter_path` is only used when it exists on disk.
+    /// `adapter_path` is only used when it exists on disk. If the adapter
+    /// fails to load, we retry base-only — one bad personal-adapter.gguf
+    /// must not disable all rewrite functionality.
     pub fn from_paths(
         path: Option<std::path::PathBuf>,
         adapter_path: Option<std::path::PathBuf>,
@@ -77,6 +93,23 @@ impl RewriteState {
                 Ok(e) => {
                     eprintln!("[nib] loaded model from {}", p.display());
                     Some(e)
+                }
+                Err(err) if adapter.is_some() => {
+                    eprintln!(
+                        "[nib] failed to load {} with adapter {:?}: {err:#} — retrying base-only",
+                        p.display(),
+                        adapter,
+                    );
+                    match inference::RewriteEngine::load(&p) {
+                        Ok(e) => {
+                            eprintln!("[nib] loaded model base-only from {}", p.display());
+                            Some(e)
+                        }
+                        Err(err2) => {
+                            eprintln!("[nib] base-only load also failed: {err2:#}");
+                            None
+                        }
+                    }
                 }
                 Err(err) => {
                     eprintln!("[nib] failed to load {}: {err:#}", p.display());
@@ -184,6 +217,27 @@ pub fn personal_adapter_path() -> Option<std::path::PathBuf> {
     p.push("Library/Application Support/Nib");
     p.push("personal-adapter.gguf");
     Some(p)
+}
+
+/// Sidecar next to the personal adapter recording which base model it was
+/// trained on (written by `training::TrainingState::install`).
+pub fn adapter_meta_path(adapter: &std::path::Path) -> std::path::PathBuf {
+    let mut s = adapter.as_os_str().to_os_string();
+    s.push(".meta.json");
+    std::path::PathBuf::from(s)
+}
+
+/// True when the personal adapter can be layered on `base`. Adapters
+/// trained before base-tagging existed have no sidecar — treated as
+/// compatible (pre-tag behavior, at the user's own risk).
+#[cfg(feature = "llm")]
+fn personal_adapter_compatible(base: &std::path::Path, adapter: &std::path::Path) -> bool {
+    let meta = adapter_meta_path(adapter);
+    let Ok(raw) = std::fs::read_to_string(&meta) else { return true };
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) else { return true };
+    let Some(trained_on) = v.get("base_filename").and_then(|s| s.as_str()) else { return true };
+    let current = base.file_name().and_then(|f| f.to_str()).unwrap_or("");
+    trained_on == current
 }
 
 #[cfg(test)]

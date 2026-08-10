@@ -117,9 +117,26 @@ fn run(
         }
 
         // Export → spawn. Prefer LOCAL backend (free, ~5 min on Metal)
-        // when bundled; fall back to Modal.
-        let export_path: PathBuf =
-            std::env::temp_dir().join("nib-auto-retrain.jsonl");
+        // when bundled. The Modal fallback UPLOADS the journal export
+        // (everything the user typed) to a cloud GPU — that must never
+        // happen implicitly, so it's gated behind the explicit
+        // `allow_cloud_training` config opt-in.
+        if !backend.local_ready() && !cfg.allow_cloud_training {
+            eprintln!(
+                "[nib][scheduler] retrain due ({new_events} new events) but local backend \
+                 isn't ready and cloud training is disabled — skipping \
+                 (set allow_cloud_training in config.json to opt in)"
+            );
+            continue;
+        }
+        // Exports live in the app data dir (0600), not world-readable /tmp.
+        let export_path: PathBuf = match crate::journal::exports_dir() {
+            Ok(d) => d.join("auto-retrain.jsonl"),
+            Err(e) => {
+                eprintln!("[nib][scheduler] exports dir: {e}");
+                continue;
+            }
+        };
         match journal.export_training_pairs(&export_path) {
             Ok(n) if n >= 10 => {
                 let start_result = if backend.local_ready() {
@@ -133,7 +150,7 @@ fn run(
                     training.start_local(finetune, base, export_path.clone(), out)
                 } else {
                     eprintln!(
-                        "[nib][scheduler] firing auto-retrain (MODAL fallback): {n} pairs, {new_events} new events"
+                        "[nib][scheduler] firing auto-retrain (MODAL, user opted in): {n} pairs, {new_events} new events"
                     );
                     training.start(export_path.clone())
                 };

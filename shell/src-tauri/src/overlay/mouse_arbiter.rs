@@ -83,7 +83,7 @@ fn run(app: AppHandle, regions: Arc<HotRegions>) {
             // can switch popovers as user moves between underlines.
             move_emit_tick = move_emit_tick.wrapping_add(1);
             let moved = (pos.0 - last_pos.0).abs() > 2.0 || (pos.1 - last_pos.1).abs() > 2.0;
-            if moved || move_emit_tick % 5 == 0 {
+            if moved || move_emit_tick.is_multiple_of(5) {
                 let _ = app.emit_to(
                     "overlay",
                     "cursor-move-hot",

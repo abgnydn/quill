@@ -89,6 +89,10 @@ pub struct SelectionEvent {
     /// Character offsets within the focused field, for apply round-trip.
     pub start: Option<u32>,
     pub end: Option<u32>,
+    /// True when the selection exceeded the 4000-char cap — `text` holds
+    /// only a prefix, so applying a rewrite of it over the FULL start..end
+    /// range would destroy the tail. JS must not offer rewrite for these.
+    pub truncated: bool,
 }
 
 /// Spawn the polling thread. Returns immediately; logs Accessibility-permission
@@ -226,8 +230,15 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
                 text: s.text.clone(),
                 start: Some(s.start),
                 end: Some(s.start + s.length),
+                truncated: s.truncated,
             },
-            _ => SelectionEvent { rect: None, text: None, start: None, end: None },
+            _ => SelectionEvent {
+                rect: None,
+                text: None,
+                start: None,
+                end: None,
+                truncated: false,
+            },
         };
         if last_selection.as_ref() != Some(&sel_event) {
             let _ = app.emit_to(OVERLAY_LABEL, "selection-update", &sel_event);
@@ -235,7 +246,7 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
         }
 
         if !bounds_changed && !text_changed {
-            if tick % 60 == 0 {
+            if tick.is_multiple_of(60) {
                 eprintln!("[nib] focus-tracker heartbeat (no change in 9s)");
             }
             // Still need to release / store the elem_ref. If we just
@@ -298,10 +309,12 @@ fn run(app: AppHandle, config: std::sync::Arc<crate::config::ConfigStore>) {
             text: text.clone(),
             lints,
         };
+        // Single targeted emit — only the overlay listens. (A broadcast on
+        // top of this made the overlay re-render every underline and
+        // double-count diagnostics on each update.)
         if let Err(e) = app.emit_to(OVERLAY_LABEL, "focus-update", &payload) {
             eprintln!("[nib] emit_to overlay failed: {e}");
         }
-        let _ = app.emit("focus-update", &payload);
 
         last_bounds = bounds;
         last_text_hash = text_hash;
@@ -314,6 +327,8 @@ struct SelectionSnapshot {
     length: u32,
     rect: Option<FocusBounds>,
     text: Option<String>,
+    /// Selection exceeded the text-snapshot cap — `text` is a prefix only.
+    truncated: bool,
 }
 
 /// Read `kAXSelectedTextRangeAttribute` from the focused element and
@@ -340,13 +355,16 @@ fn read_selection(elem: AXUIElementRef, full_text: Option<&str>) -> Option<Selec
     let rect = bounds_for_range(elem, start, length);
 
     // Selected text: slice the full field text by character (Unicode-safe).
+    // Cap at 4000 chars to avoid IPC bloat for accidental "Cmd+A" cases —
+    // and FLAG the cap, because rewriting a prefix while replacing the
+    // full range would silently delete the selection's tail.
+    let truncated = length > 4000;
     let selected_text = full_text.and_then(|t| {
         let chars: Vec<char> = t.chars().collect();
         let end = start.saturating_add(length);
         if start >= chars.len() || end > chars.len() {
             return None;
         }
-        // Cap at 4000 chars to avoid IPC bloat for accidental "Cmd+A" cases.
         let len = (end - start).min(4000);
         Some(chars[start..start + len].iter().collect::<String>())
     });
@@ -356,6 +374,7 @@ fn read_selection(elem: AXUIElementRef, full_text: Option<&str>) -> Option<Selec
         length: length as u32,
         rect,
         text: selected_text,
+        truncated,
     })
 }
 
@@ -411,21 +430,29 @@ fn focused_snapshot(
     let subrole = copy_string_attr(elem_ref, kAXSubroleAttribute);
     let role_description = copy_string_attr(elem_ref, kAXRoleDescriptionAttribute);
 
+    // Password / secure fields are non-negotiable — checked BEFORE the
+    // per-app override so a ForceAllow can never make Nib read, lint,
+    // broadcast, or journal secure text entry.
+    let is_secure = crate::overlay::engagement_policy::is_secure_field(
+        role.as_deref(),
+        subrole.as_deref(),
+    );
     // Per-app override (set via Settings UI). ForceDeny always skips;
-    // ForceAllow bypasses the engagement policy entirely.
+    // ForceAllow bypasses the rest of the engagement policy.
     let user_override = bundle_id
         .as_deref()
         .and_then(|bid| config_snap.app_override(bid));
-    let engage = match user_override {
-        Some(crate::config::AppOverride::ForceDeny) => false,
-        Some(crate::config::AppOverride::ForceAllow) => true,
-        None => crate::overlay::engagement_policy::is_engageable(
-            role.as_deref(),
-            subrole.as_deref(),
-            role_description.as_deref(),
-            bundle_id.as_deref(),
-        ),
-    };
+    let engage = !is_secure
+        && match user_override {
+            Some(crate::config::AppOverride::ForceDeny) => false,
+            Some(crate::config::AppOverride::ForceAllow) => true,
+            None => crate::overlay::engagement_policy::is_engageable(
+                role.as_deref(),
+                subrole.as_deref(),
+                role_description.as_deref(),
+                bundle_id.as_deref(),
+            ),
+        };
     if !engage {
         unsafe { CFRelease(focused_elem) };
         return SnapshotResult::Skip(SkipContext { bundle_id, role, subrole, role_description });
@@ -462,8 +489,10 @@ fn focused_snapshot(
 }
 
 /// Ask AXUI: where on the screen does character range [start..start+length)
-/// of this element sit? Used for inline underline rendering.
-pub fn bounds_for_range(
+/// of this element sit? Used for inline underline rendering. Private —
+/// takes a raw AXUIElementRef whose validity only this module's poll
+/// loop can guarantee.
+fn bounds_for_range(
     element: AXUIElementRef,
     start: usize,
     length: usize,

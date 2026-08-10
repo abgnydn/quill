@@ -108,10 +108,15 @@ fn main() -> anyhow::Result<()> {
         "[nib] rewrote in {:.2}s ({} chars in, {} chars out)",
         dt.as_secs_f32(),
         text.len(),
-        out.len()
+        out.text.len()
     );
+    if out.truncated {
+        // stderr only — stdout stays exactly the rewrite text (the eval
+        // harness and RSFT sampler parse it verbatim).
+        eprintln!("[nib] WARNING: output truncated at the max-new-tokens cap");
+    }
 
-    println!("{out}");
+    println!("{}", out.text);
     Ok(())
 }
 

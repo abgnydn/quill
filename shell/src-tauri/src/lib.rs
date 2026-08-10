@@ -5,7 +5,7 @@
 //! - `commands.rs`    — `#[tauri::command]` thunks (one-line delegations)
 //! - `inference.rs`   — llama-cpp-2 wrapper (feature = "llm")
 //! - `overlay/`       — macOS focus tracker, click-through window,
-//!                      mouse arbiter, AXUI write-back (feature = "overlay")
+//!   mouse arbiter, AXUI write-back (feature = "overlay")
 
 use tauri::Manager;
 
@@ -76,10 +76,19 @@ fn run_rewrite_selection(app: tauri::AppHandle) {
             }
         }
     };
-    let posted = overlay::clipboard::paste_via_clipboard(&result);
+    if result.truncated {
+        // Never silently replace the user's selection with a rewrite that
+        // was cut off at the token cap — losing the tail of their text is
+        // strictly worse than doing nothing.
+        eprintln!(
+            "[nib][hotkey] rewrite hit the max-token cap (selection too long) — not pasting"
+        );
+        return;
+    }
+    let posted = overlay::clipboard::paste_via_clipboard(&result.text);
     eprintln!(
         "[nib][hotkey] rewrite paste posted={posted} result={} chars",
-        result.chars().count()
+        result.text.chars().count()
     );
 }
 
@@ -133,15 +142,11 @@ pub fn run() {
                     std::sync::Arc::new(c)
                 }
                 Err(e) => {
-                    eprintln!("[nib] config open failed: {e} (using defaults in memory)");
-                    std::sync::Arc::new(
-                        config::ConfigStore::open_default()
-                            .unwrap_or_else(|_| {
-                                // Last-resort: in-memory only. open_default writes
-                                // through, so two failures imply HOME is unwritable.
-                                unreachable!("config fallback unreachable in practice")
-                            }),
-                    )
+                    // App-support dir unwritable (broken HOME, sandbox
+                    // mishap). Run with defaults backed by a temp file —
+                    // settings won't persist, but nothing panics.
+                    eprintln!("[nib] config open failed: {e} — using ephemeral defaults");
+                    std::sync::Arc::new(config::ConfigStore::ephemeral())
                 }
             };
             app.manage(config.clone());
@@ -265,8 +270,12 @@ pub fn run() {
                             }
                         }
                         "train" => {
-                            // Forward to the existing train command (no UI yet,
-                            // results land in /tmp/nib.log).
+                            // Same path as the train_personal_start command
+                            // (local QVAC preferred, Modal only behind the
+                            // explicit opt-in). The tray used to call the
+                            // legacy Modal backend directly and swallow the
+                            // error. Results land in the app log
+                            // (~/Library/Logs/nib.log via install-dev.sh).
                             let app_handle = app.clone();
                             std::thread::spawn(move || {
                                 use tauri::Manager;
@@ -274,20 +283,30 @@ pub fn run() {
                                     app_handle.state();
                                 let training: tauri::State<'_, crate::training::SharedTraining> =
                                     app_handle.state();
-                                match journal.export_training_pairs(
-                                    &std::env::temp_dir().join("nib-tray-train.jsonl"),
+                                let backend: tauri::State<'_, std::sync::Arc<crate::qvac::BackendConfig>> =
+                                    app_handle.state();
+                                let config: tauri::State<'_, std::sync::Arc<crate::config::ConfigStore>> =
+                                    app_handle.state();
+                                match commands::start_personal_training(
+                                    &journal, &training, &backend, &config,
                                 ) {
-                                    Ok(n) if n >= 10 => {
-                                        let _ = training.start(
-                                            std::env::temp_dir().join("nib-tray-train.jsonl"),
-                                        );
-                                    }
-                                    Ok(n) => eprintln!("[nib][tray] only {n} pairs; need ≥10"),
-                                    Err(e) => eprintln!("[nib][tray] export failed: {e}"),
+                                    Ok(st) => eprintln!(
+                                        "[nib][tray] training started (backend {:?})",
+                                        st.backend
+                                    ),
+                                    Err(e) => eprintln!("[nib][tray] training not started: {e}"),
                                 }
                             });
                         }
-                        "quit" => app.exit(0),
+                        "quit" => {
+                            // Reap the in-flight model download, if any —
+                            // an orphaned curl would keep writing into the
+                            // models dir after we're gone.
+                            if let Some(t) = app.try_state::<std::sync::Arc<models::DownloadTracker>>() {
+                                t.kill_running();
+                            }
+                            app.exit(0)
+                        }
                         _ => {}
                     })
                     .build(app)?;
@@ -321,13 +340,26 @@ pub fn run() {
             };
             app.manage(rewrite_state);
 
-            match journal::Journal::open_default() {
-                Ok(j) => {
-                    eprintln!("[nib] journal at {}", j.path().display());
-                    app.manage(std::sync::Arc::new(j));
-                }
-                Err(e) => eprintln!("[nib] journal open failed: {e}"),
-            }
+            // The journal must ALWAYS be managed — every journal-taking
+            // command and the tray train handler would panic on an
+            // unmanaged State. Degrade: app dir → temp dir → /dev/null
+            // (appends become no-ops; append() already swallows errors).
+            let journal_arc = std::sync::Arc::new(
+                journal::Journal::open_default()
+                    .inspect(|j| eprintln!("[nib] journal at {}", j.path().display()))
+                    .or_else(|e| {
+                        eprintln!("[nib] journal open failed: {e} — falling back to temp dir");
+                        journal::Journal::open_at(
+                            std::env::temp_dir().join("nib-journal-fallback.jsonl"),
+                        )
+                    })
+                    .unwrap_or_else(|e| {
+                        eprintln!("[nib] temp journal failed too: {e} — journaling disabled");
+                        journal::Journal::open_at(std::path::PathBuf::from("/dev/null"))
+                            .expect("/dev/null must open")
+                    }),
+            );
+            app.manage(journal_arc.clone());
 
             let training = std::sync::Arc::new(training::TrainingState::default());
             app.manage(training.clone());
@@ -346,26 +378,16 @@ pub fn run() {
             // Background scheduler — only when LLM feature is on (no
             // training infrastructure otherwise).
             #[cfg(feature = "llm")]
-            {
-                let journal_arc: std::sync::Arc<journal::Journal> = match app.try_state::<std::sync::Arc<journal::Journal>>() {
-                    Some(s) => s.inner().clone(),
-                    None => {
-                        // journal failed to open earlier; skip scheduler.
-                        eprintln!("[nib] scheduler: no journal state, skipping auto-retrain");
-                        std::sync::Arc::new(journal::Journal::open_default().unwrap_or_else(|_| unreachable!()))
-                    }
-                };
-                training_scheduler::spawn(
-                    journal_arc,
-                    training.clone(),
-                    config.clone(),
-                    backend_config.clone(),
-                );
-            }
+            training_scheduler::spawn(
+                journal_arc.clone(),
+                training.clone(),
+                config.clone(),
+                backend_config.clone(),
+            );
 
             #[cfg(all(target_os = "macos", feature = "overlay"))]
             {
-                if let Err(e) = overlay::window::create(&app.handle()) {
+                if let Err(e) = overlay::window::create(app.handle()) {
                     eprintln!("[nib] failed to create overlay window: {e}");
                 }
                 let hot = std::sync::Arc::new(overlay::mouse_arbiter::HotRegions::default());

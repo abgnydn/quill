@@ -58,6 +58,12 @@ pub struct Config {
     /// bundled lightweight option; users opt into larger downloads via
     /// the Settings panel.
     pub selected_model: String,
+    /// Allow personal-adapter training to fall back to the Modal cloud
+    /// backend when the local QVAC toolchain isn't available. Off by
+    /// default: the journal contains everything the user typed, and the
+    /// product promise is "your prose never leaves your Mac" unless the
+    /// user explicitly opts in.
+    pub allow_cloud_training: bool,
 }
 
 impl Default for Config {
@@ -73,6 +79,7 @@ impl Default for Config {
             pause_until: None,
             app_overrides: HashMap::new(),
             selected_model: "lfm2.5-350m".to_string(),
+            allow_cloud_training: false,
         }
     }
 }
@@ -124,7 +131,10 @@ fn now_secs() -> u64 {
 fn parse_rfc3339_secs(s: &str) -> Result<u64, ()> {
     // Y-M-D T H:M:S Z — accept either Z or +HH:MM, simple parse.
     let s = s.trim();
-    if s.len() < 19 { return Err(()); }
+    // The byte-position slicing below assumes single-byte chars; a
+    // hand-edited config with non-ASCII here must not panic the caller
+    // (the focus tracker polls is_paused_now constantly).
+    if !s.is_ascii() || s.len() < 19 { return Err(()); }
     let (date, rest) = s.split_at(10);
     if !rest.starts_with('T') { return Err(()); }
     let time = &rest[1..9];
@@ -167,6 +177,16 @@ impl ConfigStore {
             path,
             inner: Mutex::new(inner),
         })
+    }
+
+    /// Last-resort store used when the real config dir is unwritable
+    /// (e.g. HOME unset/broken). Lives in the temp dir so `update` still
+    /// has somewhere to write; settings simply won't survive relaunch.
+    pub fn ephemeral() -> Self {
+        Self {
+            path: std::env::temp_dir().join("nib-config-fallback.json"),
+            inner: Mutex::new(Config::default()),
+        }
     }
 
     pub fn snapshot(&self) -> Config {
