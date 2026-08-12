@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Install + relaunch dance for the Quill .app during local development.
+# Install + relaunch dance for the Nib .app during local development.
 #
-#   Why this exists: each rebuild needs to (a) kill any running Quill, (b)
+#   Why this exists: each rebuild needs to (a) kill any running Nib, (b)
 #   replace ~/Applications/Nib.app, (c) re-codesign with the stable
 #   `app.nib` identifier so the TCC Accessibility grant survives, and
-#   (d) launch a fresh process with stderr piped to /tmp/nib.log so the
-#   focus-tracker + arbiter logs are tailable.
+#   (d) launch a fresh process with stderr piped to ~/Library/Logs/nib.log
+#   so the focus-tracker + arbiter logs are tailable. (The log carries
+#   fragments of the user's prose, so it lives in the user's home — not
+#   world-readable, symlink-attackable /tmp.)
 #
 #   Usage:
 #       ./scripts/install-dev.sh                # uses the existing build
@@ -30,7 +32,8 @@ APP_NAME="Nib.app"
 BUILT_APP="$REPO_ROOT/shell/src-tauri/target/release/bundle/macos/$APP_NAME"
 INSTALL_DIR="$HOME/Applications"
 INSTALL_PATH="$INSTALL_DIR/$APP_NAME"
-LOG="/tmp/nib.log"
+LOG_DIR="$HOME/Library/Logs"
+LOG="$LOG_DIR/nib.log"
 QVAC_CACHE="$HOME/.cache/qvac/qvac-fabric-llm.cpp"
 QVAC_RESOURCES="$REPO_ROOT/shell/src-tauri/resources/qvac"
 
@@ -40,10 +43,16 @@ QVAC_RESOURCES="$REPO_ROOT/shell/src-tauri/resources/qvac"
 # touches /Applications or user docs, only build artifacts + /tmp + the
 # residual /Volumes mounts left by testing previous .dmgs.
 cleanup_old_versions() {
-  # 1. Eject any /Volumes/Nib* — testers leave these mounted.
+  # 0. Kill any running Nib first — a copy running from a mounted DMG keeps
+  #    the volume busy, which would make the ejects below fail.
+  pkill -9 -f "$APP_NAME/Contents/MacOS/nib" 2>/dev/null || true
+  sleep 1
+  # 1. Eject any /Volumes/Nib* — testers leave these mounted. Best-effort:
+  #    a busy volume (Finder window open, etc.) must not abort the install.
   for v in /Volumes/Nib*; do
     [[ -d "$v" ]] || continue
-    diskutil eject "$v" 2>&1 | head -1
+    diskutil eject "$v" 2>&1 | head -1 || \
+      echo "[nib] warning: could not eject $v (busy?) — continuing"
   done
   # 2. Remove stale staging DMGs in /tmp (we always rebuild a fresh one).
   rm -f /tmp/Nib_*.dmg /tmp/Quill_*.dmg 2>/dev/null
@@ -73,7 +82,7 @@ prepare_qvac() {
     fi
   done
   if [[ "$need_build" -eq 1 ]]; then
-    echo "[quill] QVAC binaries missing — cloning + building (one-time, ~5 min)…"
+    echo "[nib] QVAC binaries missing — cloning + building (one-time, ~5 min)…"
     if [[ ! -d "$QVAC_CACHE" ]]; then
       mkdir -p "$(dirname "$QVAC_CACHE")"
       git clone --depth 1 https://github.com/tetherto/qvac-fabric-llm.cpp \
@@ -87,9 +96,9 @@ prepare_qvac() {
         --target llama-cli llama-finetune-lora -j "$(sysctl -n hw.ncpu)"
     )
   else
-    echo "[quill] QVAC cache hit at $QVAC_CACHE"
+    echo "[nib] QVAC cache hit at $QVAC_CACHE"
   fi
-  echo "[quill] staging QVAC binaries → $QVAC_RESOURCES"
+  echo "[nib] staging QVAC binaries → $QVAC_RESOURCES"
   # Collect candidates without aborting on no-match glob expansion.
   shopt -s nullglob
   local files=(
@@ -105,7 +114,7 @@ prepare_qvac() {
     [[ -L "$f" ]] && continue
     cp -f "$f" "$QVAC_RESOURCES/"
   done
-  echo "[quill] QVAC staged: $(ls "$QVAC_RESOURCES" | wc -l | tr -d ' ') files, \
+  echo "[nib] QVAC staged: $(ls "$QVAC_RESOURCES" | wc -l | tr -d ' ') files, \
 $(du -sh "$QVAC_RESOURCES" | cut -f1)"
 }
 
@@ -124,23 +133,23 @@ for arg in "$@"; do
 done
 
 if [[ "$BUILD" -eq 1 && "$FAST" -eq 1 ]]; then
-  echo "[quill] --build and --fast are mutually exclusive" >&2
+  echo "[nib] --build and --fast are mutually exclusive" >&2
   exit 2
 fi
 
 if [[ "$BUILD" -eq 1 ]]; then
-  echo "[quill] cleaning up old versions before build…"
+  echo "[nib] cleaning up old versions before build…"
   cleanup_old_versions
   prepare_qvac
-  echo "[quill] building release with llm + overlay features (full opt, ~15 min)…"
+  echo "[nib] building release with llm + overlay features (full opt, ~15 min)…"
   ( cd "$REPO_ROOT/shell/src-tauri" && cargo tauri build --features llm,overlay )
 fi
 
 if [[ "$FAST" -eq 1 ]]; then
-  echo "[quill] cleaning up old versions before build…"
+  echo "[nib] cleaning up old versions before build…"
   cleanup_old_versions
   prepare_qvac
-  echo "[quill] FAST build (profile=release-dev, no DMG, ~3 min)…"
+  echo "[nib] FAST build (profile=release-dev, no DMG, ~3 min)…"
   ( cd "$REPO_ROOT/shell/src-tauri" && \
     cargo tauri build --features llm,overlay --bundles app -- --profile release-dev )
   # `--profile release-dev` makes cargo put the binary at target/release-dev/
@@ -150,30 +159,32 @@ if [[ "$FAST" -eq 1 ]]; then
 fi
 
 if [[ ! -d "$BUILT_APP" ]]; then
-  echo "[quill] no built app at $BUILT_APP — run with --build" >&2
+  echo "[nib] no built app at $BUILT_APP — run with --build" >&2
   exit 1
 fi
 
-echo "[quill] killing any running Quill processes…"
-pkill -9 -f "$APP_NAME/Contents/MacOS/quill" 2>/dev/null || true
+echo "[nib] killing any running Nib processes…"
+pkill -9 -f "$APP_NAME/Contents/MacOS/nib" 2>/dev/null || true
 sleep 2
 
 mkdir -p "$INSTALL_DIR"
-echo "[quill] replacing $INSTALL_PATH"
+echo "[nib] replacing $INSTALL_PATH"
 rm -rf "$INSTALL_PATH"
 cp -R "$BUILT_APP" "$INSTALL_PATH"
 xattr -dr com.apple.quarantine "$INSTALL_PATH" 2>/dev/null || true
 
-echo "[quill] ad-hoc codesign with stable identifier…"
+echo "[nib] ad-hoc codesign with stable identifier…"
 codesign --force --deep --sign - "$INSTALL_PATH" 2>&1 | tail -1
 codesign --display --verbose=2 "$INSTALL_PATH" 2>&1 | grep -E "Identifier|Signature" || true
 
+mkdir -p "$LOG_DIR"
 rm -f "$LOG"
-echo "[quill] launching with stderr → $LOG"
-"$INSTALL_PATH/Contents/MacOS/quill" > "$LOG" 2>&1 &
-QUILL_PID=$!
+( umask 077; : > "$LOG" )   # pre-create 0600 — the log carries prose fragments
+echo "[nib] launching with stderr → $LOG"
+"$INSTALL_PATH/Contents/MacOS/nib" > "$LOG" 2>&1 &
+NIB_PID=$!
 sleep 4
-echo "[quill] pid=$QUILL_PID  log=$LOG"
+echo "[nib] pid=$NIB_PID  log=$LOG"
 
 # Final sweep after install — drop the freshly-built artifact in target/
 # now that it's been copied into ~/Applications. Spotlight only sees the
@@ -182,6 +193,6 @@ rm -rf "$REPO_ROOT/shell/src-tauri/target/release-dev/bundle/macos/Nib.app" \
        "$REPO_ROOT/shell/src-tauri/target/release/bundle/macos/Nib.app" 2>/dev/null
 
 if [[ "$TAIL" -eq 1 ]]; then
-  echo "[quill] tailing $LOG (Ctrl-C to stop)…"
-  exec tail -f "$LOG" | grep --line-buffered -E "\[quill\]|focus-update|cursor|overlay-js|apply"
+  echo "[nib] tailing $LOG (Ctrl-C to stop)…"
+  exec tail -f "$LOG" | grep --line-buffered -E "\[nib\]|focus-update|cursor|overlay-js|apply"
 fi

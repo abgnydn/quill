@@ -2,7 +2,7 @@
 //!
 //! Every time the user accepts or dismisses a Nib suggestion (whether a
 //! Harper-derived chip or an AI rewrite), we append one JSON line to a
-//! file under `~/Library/Application Support/Quill/journal.jsonl`. The
+//! file under `~/Library/Application Support/Nib/journal.jsonl`. The
 //! file never leaves the device unless the user explicitly exports it.
 //!
 //! Format is one self-contained JSON object per line so:
@@ -36,7 +36,7 @@ pub struct JournalEvent {
     pub lint_end: Option<u32>,
     pub lint_kind: Option<String>,
     pub lint_message: Option<String>,
-    /// The text Quill offered — suggestion replacement, or the LLM rewrite.
+    /// The text Nib offered — suggestion replacement, or the LLM rewrite.
     pub suggested: String,
     /// The text actually written back. For an `apply` this is `suggested`;
     /// for a `rewrite_apply` same. For `dismiss` events: empty.
@@ -60,7 +60,13 @@ pub struct Journal {
 
 impl Journal {
     pub fn open_default() -> std::io::Result<Self> {
-        let path = default_path()?;
+        Self::open_at(default_path()?)
+    }
+
+    /// Open (creating if needed) a journal at an explicit path. Used by
+    /// `open_default` and as a temp-dir fallback when the app-support dir
+    /// is unwritable.
+    pub fn open_at(path: PathBuf) -> std::io::Result<Self> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -81,12 +87,15 @@ impl Journal {
     /// Append one event. Non-fatal on errors (the journal is best-effort —
     /// never break the rewrite flow because of a disk hiccup).
     pub fn append(&self, evt: &JournalEvent) {
-        let line = match serde_json::to_string(evt) {
+        let mut line = match serde_json::to_string(evt) {
             Ok(s) => s,
             Err(_) => return,
         };
+        line.push('\n');
         if let Ok(mut f) = self.file.lock() {
-            let _ = writeln!(f, "{}", line);
+            // Single write(2) for body + newline — a crash between two
+            // separate writes would corrupt this line AND the next one.
+            let _ = f.write_all(line.as_bytes());
             let _ = f.flush();
         }
     }
@@ -124,7 +133,16 @@ impl Journal {
             fs::create_dir_all(parent)?;
         }
         let in_f = File::open(&self.path)?;
-        let mut out_f = File::create(out_path)?;
+        // The export contains everything the user typed — owner-only perms
+        // no matter where the caller points it (incl. shared temp dirs).
+        let mut opts = OpenOptions::new();
+        opts.write(true).create(true).truncate(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let mut out_f = opts.open(out_path)?;
         let mut n = 0usize;
         for line in BufReader::new(in_f).lines().map_while(Result::ok) {
             let Ok(evt): Result<JournalEvent, _> = serde_json::from_str(&line) else { continue };
@@ -163,8 +181,19 @@ fn default_path() -> std::io::Result<PathBuf> {
         std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set")
     })?;
     let mut p = PathBuf::from(home);
-    p.push("Library/Application Support/Quill");
+    p.push("Library/Application Support/Nib");
     p.push("journal.jsonl");
+    Ok(p)
+}
+
+/// Directory for journal exports (training pairs). Lives inside the app
+/// data dir — NOT /tmp — because exports contain the user's typed text.
+pub fn exports_dir() -> std::io::Result<PathBuf> {
+    let home = std::env::var_os("HOME").ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set")
+    })?;
+    let p = PathBuf::from(home).join("Library/Application Support/Nib/exports");
+    fs::create_dir_all(&p)?;
     Ok(p)
 }
 
@@ -289,7 +318,7 @@ mod tests {
     /// hit before journal_log existed.
     #[test]
     fn n_logs_yield_n_in_stats() {
-        let tmp = std::env::temp_dir().join(format!("quill-jlog-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("nib-jlog-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let file = std::fs::OpenOptions::new()
@@ -317,7 +346,7 @@ mod tests {
     /// zero counts, zero exported pairs).
     #[test]
     fn empty_journal_is_safe() {
-        let tmp = std::env::temp_dir().join(format!("quill-jemp-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("nib-jemp-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let path = tmp.join("j.jsonl");
@@ -342,7 +371,7 @@ mod tests {
     /// pairs — those are negative signals for v0.6 DPO, not pairs.
     #[test]
     fn export_skips_non_applied_events() {
-        let tmp = std::env::temp_dir().join(format!("quill-jexp-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("nib-jexp-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let path = tmp.join("j.jsonl");
@@ -380,7 +409,7 @@ mod tests {
         use std::io::{BufRead, BufReader};
 
         // Use a tempdir so we don't touch ~/Library.
-        let tmp = std::env::temp_dir().join(format!("quill-journal-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("nib-journal-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
         let journal_path = tmp.join("journal.jsonl");

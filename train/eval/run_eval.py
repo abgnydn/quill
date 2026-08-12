@@ -1,24 +1,27 @@
 """
 Faithful-rewrite eval harness for Nib.
 
-Reads train/eval/cases.jsonl, runs each case through llama-cli against
-the chosen model + the production instruction template, scores per-case:
+Reads train/eval/cases.jsonl, runs each case through Nib's own
+`nib-rewrite` binary against the chosen model + the production
+instruction template, scores per-case:
 
   - WORDS:    word count within [min_words, max_words]
   - FORBID:   none of the forbidden substrings appear in output
-  - KEEP:     every must_keep token appears in output
-  - REFUSAL:  cases without tone+formality are treated as
-              "minimum intervention" — the output should be close
-              to the source by edit distance
+  - KEEP:     every must_keep term appears in output (semantic variant
+              expansion, word-boundary matched)
+
+must_keep matching note: keep-term variants are anchored with word
+boundaries by default, so numeric terms like "45" no longer match inside
+unrelated numbers ("450", "145") and "nine" no longer matches inside
+"ninety". All reports in train/reports/ were produced with the older
+unanchored substring-containment matching — pass --legacy-keep-match to
+reproduce those numbers.
 
 Outputs a json report + a one-line summary.
 
 Usage:
   python run_eval.py --model PATH_TO.gguf [--label baseline-1.2b]
   python run_eval.py --model PATH_TO.gguf --adapter nib-faithful.gguf
-
-Per-case timing comes from llama-cli's own stderr; we just sample
-output content.
 """
 
 import argparse
@@ -35,7 +38,7 @@ from typing import Any
 
 # ───────────────────────── config ─────────────────────────
 
-# Match the exact instruction template the v1.3.4 rewrite panel uses
+# Match the exact instruction template the rewrite panel uses
 # in overlay.js → composeInstruction(). Diverging here invalidates the
 # eval as a proxy for the user's experience.
 def compose_instruction(tone: str | None, formality: str | None) -> str | None:
@@ -55,24 +58,27 @@ def compose_instruction(tone: str | None, formality: str | None) -> str | None:
         f"Do not pad with filler. Output only the rewritten text, nothing else."
     )
 
-# ChatML for LFM2.5 — matches the prompt template in inference.rs.
-def build_prompt(source: str, instruction: str | None) -> str:
-    if instruction is None:
-        # Default editing instruction (matches DEFAULT_INSTRUCTION in inference.rs).
-        instruction = "Fix the grammar and improve clarity:"
-    user_msg = f"{instruction} {source}"
-    return f"<|im_start|>user\n{user_msg}<|im_end|>\n<|im_start|>assistant\n"
-
-
 # ───────────────────────── runners ─────────────────────────
 
-# Nib's own `quill-rewrite` Rust binary — uses the SAME llama-cpp-2
+# Nib's own `nib-rewrite` Rust binary — uses the SAME llama-cpp-2
 # engine the app uses at runtime, so eval results match user experience
 # exactly. Avoids the dead-ends we hit otherwise:
 #   - QVAC's llama-cli requires conversation mode (no -no-cnv)
 #   - Vanilla llama.cpp from brew doesn't have LFM2.5 arch support
-QUILL_REWRITE = os.path.expanduser(
-    "~/quill/shell/src-tauri/target/release-dev/quill-rewrite"
+# Resolved relative to this repo checkout so a fresh `git clone` works;
+# falls back to the author's historical ~/quill clone if that's where
+# the binary actually is.
+_REPO_BINARY = str(
+    Path(__file__).resolve().parents[2]
+    / "shell/src-tauri/target/release-dev/nib-rewrite"
+)
+_LEGACY_BINARY = os.path.expanduser(
+    "~/quill/shell/src-tauri/target/release-dev/nib-rewrite"
+)
+NIB_REWRITE = (
+    _REPO_BINARY
+    if os.path.exists(_REPO_BINARY) or not os.path.exists(_LEGACY_BINARY)
+    else _LEGACY_BINARY
 )
 
 
@@ -82,11 +88,12 @@ def run_model(
     instruction: str | None,
     *,
     adapter_path: str | None = None,
+    binary: str = NIB_REWRITE,
 ) -> str:
-    """Single-shot generation via Nib's own quill-rewrite binary.
+    """Single-shot generation via Nib's own nib-rewrite binary.
     Same engine as the running app — eval matches user experience.
     """
-    cmd = [QUILL_REWRITE, "-m", model_path, "-t", source]
+    cmd = [binary, "-m", model_path, "-t", source]
     if instruction:
         cmd += ["-i", instruction]
     if adapter_path:
@@ -94,15 +101,27 @@ def run_model(
     try:
         proc = subprocess.run(
             cmd, capture_output=True, text=True, timeout=120,
-            errors="replace",   # quill-rewrite stderr has Metal-init binary chars
+            errors="replace",   # nib-rewrite stderr has Metal-init binary chars
         )
     except subprocess.TimeoutExpired:
         return "[TIMEOUT]"
+    if proc.returncode != 0:
+        # Infra failure (model/adapter failed to load, bad CLI arg, …) —
+        # abort the run instead of scoring an empty output as a model
+        # failure and publishing a bogus pass rate.
+        stderr_tail = "\n".join((proc.stderr or "").strip().splitlines()[-15:])
+        print(
+            f"[eval] INFRA FAILURE: {binary} exited {proc.returncode} — "
+            f"harness/model-loading problem, NOT a model quality failure.\n"
+            f"[eval] stderr tail:\n{stderr_tail}",
+            file=sys.stderr,
+        )
+        raise SystemExit(3)
     raw = proc.stdout.strip()
-    # quill-rewrite writes "[quill] rewrote in Xs ..." to stderr; the
+    # nib-rewrite writes "[nib] rewrote in Xs ..." to stderr; the
     # rewritten text goes to stdout on the last line(s). Take the last
     # non-empty block.
-    lines = [l for l in raw.splitlines() if l.strip()]
+    lines = [line for line in raw.splitlines() if line.strip()]
     return "\n".join(lines).strip()
 
 
@@ -118,6 +137,8 @@ class Score:
     missing_keeps: list[str] = field(default_factory=list)
     output: str = ""
     failure_reasons: list[str] = field(default_factory=list)
+    # Optional LLM-judge result (see judge.py); None unless --judge is set.
+    judge: dict[str, Any] | None = None
 
 
 WORD_RE = re.compile(r"\w+", re.UNICODE)
@@ -203,13 +224,32 @@ def _keep_variants(term: str) -> set[str]:
     return out
 
 
-def _keep_matches(term: str, output_normalized: str) -> bool:
-    """True if any semantic variant of `term` is a substring of the
-    normalized output. Used by score_output for the must_keep check."""
-    return any(v in output_normalized for v in _keep_variants(term))
+def _anchored(variant: str) -> re.Pattern[str]:
+    """Word-boundary regex for a keep variant: anchor the ends that are
+    word characters so "45" can't match inside "450"/"145" and "nine"
+    can't match inside "ninety". Ends that are already non-word ("$",
+    "%", "/") need no anchor — "$47.30", "12%", "/v2/search" still match
+    as before."""
+    prefix = r"(?<!\w)" if variant and re.match(r"\w", variant[0]) else ""
+    suffix = r"(?!\w)" if variant and re.match(r"\w", variant[-1]) else ""
+    return re.compile(prefix + re.escape(variant) + suffix)
 
 
-def score_output(case: dict[str, Any], output: str) -> Score:
+def _keep_matches(term: str, output_normalized: str, *, legacy: bool = False) -> bool:
+    """True if any semantic variant of `term` appears in the normalized
+    output as a word-boundary match (default). `legacy=True` restores the
+    old unanchored substring containment (what every report in
+    train/reports/ was produced with). Used by score_output for the
+    must_keep check."""
+    variants = _keep_variants(term)
+    if legacy:
+        return any(v in output_normalized for v in variants)
+    return any(_anchored(v).search(output_normalized) for v in variants)
+
+
+def score_output(
+    case: dict[str, Any], output: str, *, legacy_keep_match: bool = False
+) -> Score:
     sc = Score(id=case["id"], ok=True, word_count=0, word_count_ok=True)
     sc.output = output
 
@@ -242,12 +282,13 @@ def score_output(case: dict[str, Any], output: str) -> Score:
 
     # Must-keep: semantic match — accepts month abbrev ↔ full, k/M ↔
     # thousand/million, digit ↔ word for 1-12, hyphen tolerance, and
-    # ordinal suffixes. Substring of normalized output for everything else.
+    # ordinal suffixes. Each variant is word-boundary matched against the
+    # normalized output (unanchored containment with legacy_keep_match).
     # Preserves "$47.30", "12%", "/v2/search" since those don't trip any
     # of the variant rules.
     out_normalized = _normalize_for_match(output)
     for term in case.get("must_keep", []):
-        if not _keep_matches(term, out_normalized):
+        if not _keep_matches(term, out_normalized, legacy=legacy_keep_match):
             sc.missing_keeps.append(term)
     if sc.missing_keeps:
         sc.ok = False
@@ -267,7 +308,20 @@ def main() -> int:
     ap.add_argument("--label", default="run", help="Human-readable label for report")
     ap.add_argument("--limit", type=int, default=0, help="Run only first N cases (debug)")
     ap.add_argument("--verbose", action="store_true", help="Print each output")
+    ap.add_argument("--binary", default=None,
+                    help=f"Path to the nib-rewrite binary (default: {NIB_REWRITE})")
+    ap.add_argument("--judge", action="store_true",
+                    help="Also score each rewrite with the Claude LLM-judge "
+                         "(needs ANTHROPIC_API_KEY + `pip install anthropic`)")
+    ap.add_argument("--judge-model", default=None,
+                    help="Judge model id (default: claude-opus-4-8)")
+    ap.add_argument("--legacy-keep-match", action="store_true",
+                    help="Score must_keep with the old unanchored substring "
+                         "containment instead of word-boundary matching "
+                         "(reproduces the reports in train/reports/)")
     args = ap.parse_args()
+
+    binary = args.binary or NIB_REWRITE
 
     if not os.path.exists(args.model):
         print(f"model not found: {args.model}", file=sys.stderr)
@@ -275,16 +329,26 @@ def main() -> int:
     if args.adapter and not os.path.exists(args.adapter):
         print(f"adapter not found: {args.adapter}", file=sys.stderr)
         return 2
-    if not os.path.exists(QUILL_REWRITE):
-        print(f"quill-rewrite not found: {QUILL_REWRITE}\n"
-              f"Build it with: cd ~/quill/shell/src-tauri && "
-              f"cargo build --release --features llm --bin quill-rewrite",
+    if not os.path.exists(binary):
+        print(f"nib-rewrite not found: {binary}\n"
+              f"Build it with: cd shell/src-tauri && "
+              f"cargo build --profile release-dev --features llm --bin nib-rewrite",
               file=sys.stderr)
         return 2
 
-    cases = [json.loads(l) for l in open(args.cases) if l.strip()]
+    cases = [json.loads(line) for line in open(args.cases) if line.strip()]
     if args.limit:
         cases = cases[: args.limit]
+
+    # LLM-judge setup (lazy: only import/connect when --judge is on).
+    judge_mod = None
+    judge_client = None
+    judge_model = None
+    if args.judge:
+        import judge as judge_mod  # same dir; on sys.path when run as a script
+        judge_model = args.judge_model or judge_mod.DEFAULT_JUDGE_MODEL
+        judge_client = judge_mod.make_client()
+        print(f"[eval] judge={judge_model}", file=sys.stderr)
 
     print(f"[eval] model={args.model}", file=sys.stderr)
     if args.adapter:
@@ -296,14 +360,26 @@ def main() -> int:
     for i, case in enumerate(cases):
         instr = compose_instruction(case.get("tone"), case.get("formality"))
         t_case = time.time()
-        out = run_model(args.model, case["source"], instr, adapter_path=args.adapter)
+        out = run_model(args.model, case["source"], instr, adapter_path=args.adapter, binary=binary)
         dt = time.time() - t_case
-        sc = score_output(case, out)
+        sc = score_output(case, out, legacy_keep_match=args.legacy_keep_match)
+        if args.judge:
+            sc.judge = judge_mod.judge_rewrite(
+                case["source"], out, instr, client=judge_client, model=judge_model,
+            )
         scores.append(sc)
         mark = "✓" if sc.ok else "✗"
+        judge_tag = ""
+        if sc.judge:
+            if "error" in sc.judge:
+                judge_tag = f"  judge=ERR({sc.judge['error'][:24]})"
+            else:
+                axes = ("grammaticality", "faithfulness", "improvement", "fluency")
+                avg = sum(sc.judge.get(a, 0) for a in axes) / len(axes)
+                judge_tag = f"  judge={avg:.2f} {sc.judge.get('verdict', '?')}"
         print(
             f"[{i+1:2}/{len(cases)}] {mark} {sc.id:32} "
-            f"words={sc.word_count:3} ({dt:.1f}s)",
+            f"words={sc.word_count:3} ({dt:.1f}s){judge_tag}",
             file=sys.stderr,
         )
         if not sc.ok:
@@ -328,6 +404,9 @@ def main() -> int:
         "scores": [asdict(s) for s in scores],
     }
 
+    if args.judge:
+        report["judge"] = judge_mod.summarize_judgments([s.judge for s in scores])
+
     if args.out:
         Path(args.out).write_text(json.dumps(report, indent=2))
         print(f"[eval] wrote {args.out}", file=sys.stderr)
@@ -336,6 +415,17 @@ def main() -> int:
         f"\n{args.label}: {pass_n}/{len(scores)} pass ({pass_rate:.1f}%)  "
         f"avg_words={report['avg_words']}  total={dt_total:.1f}s"
     )
+    if args.judge:
+        j = report["judge"]
+        if j.get("n_judged"):
+            v = j.get("verdicts", {})
+            print(
+                f"{args.label}: judge overall={j.get('mean_overall')}/5  "
+                f"(gram={j.get('mean_grammaticality')} faith={j.get('mean_faithfulness')} "
+                f"impr={j.get('mean_improvement')} flu={j.get('mean_fluency')})  "
+                f"verdict better/same/worse={v.get('better')}/{v.get('same')}/{v.get('worse')}  "
+                f"win_rate={j.get('win_rate')}%  (judged {j['n_judged']}, errors {j.get('n_errors', 0)})"
+            )
     return 0
 
 

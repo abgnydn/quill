@@ -79,9 +79,16 @@ pub const REGISTRY: &[ModelInfo] = &[
         filename: "qwen2.5-1.5b-instruct-q4_k_m.gguf",
         requires_base: None,
     },
-    // Nib's faithful-rewrite LoRA — ships bundled in the .app (~50 MB),
-    // applied at runtime on top of the Qwen base. Each future iteration
-    // (v2.1, v2.2, …) ships as a tiny adapter swap, no base re-download.
+    // Nib's faithful-rewrite LoRA, applied at runtime on top of the Qwen
+    // base. Ships inside Full builds (`tauri.conf.full.json`); regular
+    // builds download it from the GitHub release. Each future iteration
+    // (v2.2, v2.3, …) ships as a tiny adapter swap, no base re-download.
+    //
+    // NOTE: the v2.1.0 release with this asset is NOT published yet — the
+    // only release is v2.0.0 (which carries the old merged model). Until
+    // `gh release create v2.1.0 nib-faithful-f16.gguf` happens, this URL
+    // 404s; the hardened downloader below surfaces that as a clear error
+    // instead of installing an error page.
     ModelInfo {
         id: "nib-qwen-v2",
         display_name: "Nib-Faithful v2 (Qwen 1.5B + LoRA)",
@@ -89,12 +96,11 @@ pub const REGISTRY: &[ModelInfo] = &[
         size_mb: 36,
         blurb: "Premium. Nib's faithful-rewrite LoRA layered on Qwen 2.5-\
                 1.5B — preserves facts, numbers, and technical tokens. \
-                70% pass on our internal eval (vs 34% for the 350M \
-                default). Adapter is ~36 MB and ships bundled; the 940 MB \
-                Qwen base downloads once, reusable for any future Nib \
-                adapter.",
+                81.1% on the 90-case held-out benchmark (vs 64.4% for \
+                stock Qwen). Adapter is ~36 MB; the 940 MB Qwen base \
+                downloads once, reusable for any future Nib adapter.",
         bundled: true,
-        url: Some("https://github.com/abgnydn/quill/releases/download/v2.1.0/nib-faithful-f16.gguf"),
+        url: Some("https://github.com/abgnydn/nib/releases/download/v2.1.0/nib-faithful-f16.gguf"),
         filename: "nib-faithful-f16.gguf",
         requires_base: Some("qwen2.5-1.5b-instruct"),
     },
@@ -162,32 +168,48 @@ pub fn resolve_paths<R: tauri::Runtime, M: tauri::Manager<R>>(
     }
 }
 
-/// What to download when the user clicks "install" on `id`. For
-/// standalone models this is `id` itself; for an adapter entry it's
-/// the base (since the adapter ships bundled in the .app). Returns
-/// `None` if everything's already on disk.
-pub fn download_target<R: tauri::Runtime, M: tauri::Manager<R>>(
+/// Everything that must be downloaded before `id` can load, in download
+/// order (base first, then the adapter itself when it has a URL and is
+/// missing — `bundled` only means it *may* ship inside Full builds).
+/// Empty = fully installed. Entries without a URL that are missing can't
+/// be fixed by downloading; [`missing_undownloadable`] reports those.
+pub fn download_targets<R: tauri::Runtime, M: tauri::Manager<R>>(
     app: &M,
     id: &str,
-) -> Option<&'static str> {
+) -> Vec<&'static str> {
     let info = lookup(id);
-    match info.requires_base {
-        Some(base_id) => {
-            // Adapter entry: download the base if absent.
-            if resolve_path(app, base_id).is_none() {
-                Some(base_id)
-            } else {
-                None
-            }
-        }
-        None => {
-            if resolve_path(app, id).is_none() {
-                Some(info.id)
-            } else {
-                None
-            }
+    let mut out = Vec::new();
+    if let Some(base_id) = info.requires_base {
+        let base = lookup(base_id);
+        if resolve_path(app, base_id).is_none() && base.url.is_some() {
+            out.push(base.id);
         }
     }
+    if resolve_path(app, info.id).is_none() && info.url.is_some() {
+        out.push(info.id);
+    }
+    out
+}
+
+/// Files `id` needs that are missing AND have no download URL — the user
+/// can't fix these from the picker (e.g. a bundled-only file absent from
+/// this build). Used to produce an honest error message.
+pub fn missing_undownloadable<R: tauri::Runtime, M: tauri::Manager<R>>(
+    app: &M,
+    id: &str,
+) -> Vec<&'static str> {
+    let info = lookup(id);
+    let mut out = Vec::new();
+    if let Some(base_id) = info.requires_base {
+        let base = lookup(base_id);
+        if resolve_path(app, base_id).is_none() && base.url.is_none() {
+            out.push(base.id);
+        }
+    }
+    if resolve_path(app, info.id).is_none() && info.url.is_none() {
+        out.push(info.id);
+    }
+    out
 }
 
 /// Extended ModelInfo with runtime "installed" + "loaded" flags. Used
@@ -208,9 +230,9 @@ pub fn downloaded_models_dir() -> std::io::Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set"))?;
     let mut p = PathBuf::from(home);
-    // Note: dir stays as "Quill" for back-compat with existing user data;
-    // a future migration will move it to "Nib".
-    p.push("Library/Application Support/Quill/models");
+    // The data dir is "Nib"; existing "Quill" dirs are migrated on startup by
+    // `config::migrate_legacy_data_dir`, so user data carries over.
+    p.push("Library/Application Support/Nib/models");
     std::fs::create_dir_all(&p)?;
     Ok(p)
 }
@@ -241,17 +263,23 @@ pub enum DownloadState {
 
 pub struct DownloadTracker {
     inner: Mutex<DownloadStatus>,
+    /// PID of the currently-running curl child, so the quit path can kill
+    /// it instead of leaving an orphan writing into the models dir.
+    child_pid: Mutex<Option<u32>>,
 }
 
 impl DownloadTracker {
     pub const fn new() -> Self {
-        Self { inner: Mutex::new(DownloadStatus {
-            model_id: String::new(),
-            bytes_done: 0,
-            total_bytes: 0,
-            state: DownloadState::Idle,
-            error: None,
-        }) }
+        Self {
+            inner: Mutex::new(DownloadStatus {
+                model_id: String::new(),
+                bytes_done: 0,
+                total_bytes: 0,
+                state: DownloadState::Idle,
+                error: None,
+            }),
+            child_pid: Mutex::new(None),
+        }
     }
 
     pub fn snapshot(&self) -> DownloadStatus {
@@ -269,129 +297,197 @@ impl DownloadTracker {
             f(&mut g);
         }
     }
+
+    fn set_child_pid(&self, pid: Option<u32>) {
+        if let Ok(mut g) = self.child_pid.lock() {
+            *g = pid;
+        }
+    }
+
+    /// Kill the in-flight curl child, if any. Called on app quit so a
+    /// half-finished download doesn't keep writing after Nib exits.
+    /// `/bin/kill` avoids pulling in libc just for one signal.
+    pub fn kill_running(&self) {
+        if let Ok(g) = self.child_pid.lock() {
+            if let Some(pid) = *g {
+                let _ = std::process::Command::new("/bin/kill")
+                    .arg(pid.to_string())
+                    .status();
+            }
+        }
+    }
 }
 
-/// Spawn a background thread that downloads `id` via `curl`. Polls the
-/// destination file size for progress (curl streams writes), updates the
-/// shared [`DownloadTracker`]. Returns immediately.
+impl Default for DownloadTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Spawn a background thread that downloads each id in `ids` (in order)
+/// via `curl`. Polls the destination file size for progress (curl streams
+/// writes), updates the shared [`DownloadTracker`]. Stops the queue on
+/// the first failure. Returns immediately.
 ///
 /// curl is universally available on macOS 13+ — no extra deps. It also
 /// handles HuggingFace's 302→CDN redirect chain cleanly via `-L`.
+/// Hardening:
+///   - absolute /usr/bin/curl (no PATH hijack)
+///   - `--fail`: an HTTP 404/500 error page must never be renamed into a
+///     "installed" .gguf (that would permanently brick the entry — the UI
+///     has no re-download path once `is_installed` is true)
+///   - `--proto =https --retry 3 -C -`: https-only, transient-error retry,
+///     resume of a previous .part
+///   - post-download size floor vs the registry's size_mb
 pub fn spawn_download(
-    id: String,
+    ids: Vec<String>,
     tracker: std::sync::Arc<DownloadTracker>,
     on_complete: Option<Box<dyn Fn() + Send + 'static>>,
 ) {
-    let info = lookup(&id).clone();
-    let url = match info.url {
-        Some(u) => u.to_string(),
-        None => {
-            tracker.set(DownloadStatus {
-                model_id: id,
-                bytes_done: 0,
-                total_bytes: 0,
-                state: DownloadState::Failed,
-                error: Some("model is bundled, no download needed".into()),
-            });
-            return;
-        }
+    let first = match ids.first() {
+        Some(id) => id.clone(),
+        None => return,
     };
-    let dest_dir = match downloaded_models_dir() {
-        Ok(d) => d,
-        Err(e) => {
-            tracker.set(DownloadStatus {
-                model_id: id,
-                bytes_done: 0,
-                total_bytes: 0,
-                state: DownloadState::Failed,
-                error: Some(format!("dest dir: {e}")),
-            });
-            return;
-        }
-    };
-    let dest_path = dest_dir.join(info.filename);
-    let tmp_path = dest_dir.join(format!("{}.part", info.filename));
-    let total_estimate = info.size_mb * 1024 * 1024;
-
     tracker.set(DownloadStatus {
-        model_id: id.clone(),
+        model_id: first,
         bytes_done: 0,
-        total_bytes: total_estimate,
+        total_bytes: lookup(&ids[0]).size_mb * 1024 * 1024,
         state: DownloadState::Running,
         error: None,
     });
 
     std::thread::Builder::new()
-        .name(format!("nib-model-download-{}", info.id))
+        .name("nib-model-download".into())
         .spawn({
             let tracker = tracker.clone();
-            let id_for_thread = id.clone();
             move || {
-                // Spawn curl, follow redirects, write to .part atomic rename on success.
-                let mut child = match std::process::Command::new("curl")
-                    .arg("-L")
-                    .arg("-o").arg(&tmp_path)
-                    .arg(&url)
-                    .stdout(std::process::Stdio::null())
-                    .stderr(std::process::Stdio::null())
-                    .spawn()
-                {
-                    Ok(c) => c,
-                    Err(e) => {
-                        tracker.update(|s| {
-                            s.state = DownloadState::Failed;
-                            s.error = Some(format!("curl spawn: {e}"));
-                        });
-                        return;
+                for (i, id) in ids.iter().enumerate() {
+                    if !download_one(id, &tracker) {
+                        return; // tracker already set to Failed
                     }
-                };
-
-                // Poll file size every 500ms while curl runs.
-                loop {
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                    let size = std::fs::metadata(&tmp_path).map(|m| m.len()).unwrap_or(0);
-                    tracker.update(|s| s.bytes_done = size);
-                    match child.try_wait() {
-                        Ok(Some(status)) if status.success() => {
-                            // Rename .part → final.
-                            if let Err(e) = std::fs::rename(&tmp_path, &dest_path) {
-                                tracker.update(|s| {
-                                    s.state = DownloadState::Failed;
-                                    s.error = Some(format!("rename: {e}"));
-                                });
-                                return;
-                            }
-                            tracker.update(|s| {
-                                s.state = DownloadState::Done;
-                                s.bytes_done = std::fs::metadata(&dest_path)
-                                    .map(|m| m.len()).unwrap_or(s.bytes_done);
-                                s.total_bytes = s.bytes_done;
-                            });
-                            eprintln!("[nib][model] download complete: {id_for_thread}");
-                            if let Some(cb) = on_complete { cb(); }
-                            return;
-                        }
-                        Ok(Some(status)) => {
-                            let _ = std::fs::remove_file(&tmp_path);
-                            tracker.update(|s| {
-                                s.state = DownloadState::Failed;
-                                s.error = Some(format!("curl exited {status}"));
-                            });
-                            return;
-                        }
-                        Ok(None) => continue,
-                        Err(e) => {
-                            tracker.update(|s| {
-                                s.state = DownloadState::Failed;
-                                s.error = Some(format!("wait: {e}"));
-                            });
-                            return;
-                        }
+                    // Keep showing Running between queue items so the UI
+                    // (and model_download's double-start guard) don't see
+                    // a momentary Done mid-queue.
+                    if i + 1 < ids.len() {
+                        tracker.update(|s| s.state = DownloadState::Running);
                     }
                 }
+                if let Some(cb) = on_complete { cb(); }
             }
         })
         .expect("spawn download thread");
+}
+
+/// Download a single registry entry synchronously (called from the queue
+/// thread). Returns true on success; on failure sets the tracker state.
+fn download_one(id: &str, tracker: &DownloadTracker) -> bool {
+    let fail = |msg: String| {
+        tracker.update(|s| {
+            s.state = DownloadState::Failed;
+            s.error = Some(msg);
+        });
+        false
+    };
+
+    let info = lookup(id).clone();
+    let url = match info.url {
+        Some(u) => u.to_string(),
+        None => return fail(format!("{id} has no download URL (bundled-only)")),
+    };
+    let dest_dir = match downloaded_models_dir() {
+        Ok(d) => d,
+        Err(e) => return fail(format!("dest dir: {e}")),
+    };
+    let dest_path = dest_dir.join(info.filename);
+    let tmp_path = dest_dir.join(format!("{}.part", info.filename));
+
+    // Guard against an orphaned curl (from a previous crashed/quit run)
+    // still writing the same .part: if the file grows while we watch it,
+    // someone else owns it.
+    if let Ok(m0) = std::fs::metadata(&tmp_path) {
+        std::thread::sleep(std::time::Duration::from_millis(750));
+        if let Ok(m1) = std::fs::metadata(&tmp_path) {
+            if m1.len() > m0.len() {
+                return fail(format!(
+                    "another process is already downloading {} — try again in a minute",
+                    info.filename
+                ));
+            }
+        }
+    }
+
+    tracker.set(DownloadStatus {
+        model_id: id.to_string(),
+        bytes_done: 0,
+        total_bytes: info.size_mb * 1024 * 1024,
+        state: DownloadState::Running,
+        error: None,
+    });
+
+    let mut child = match std::process::Command::new("/usr/bin/curl")
+        .arg("--fail")
+        .arg("--proto").arg("=https")
+        .arg("--retry").arg("3")
+        .arg("-C").arg("-")
+        .arg("-L")
+        .arg("-o").arg(&tmp_path)
+        .arg(&url)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => return fail(format!("curl spawn: {e}")),
+    };
+    tracker.set_child_pid(Some(child.id()));
+
+    // Poll file size every 500ms while curl runs.
+    let result = loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let size = std::fs::metadata(&tmp_path).map(|m| m.len()).unwrap_or(0);
+        tracker.update(|s| s.bytes_done = size);
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => break Ok(()),
+            Ok(Some(status)) => {
+                // 22 = curl's HTTP-error exit under --fail; keep the .part
+                // for `-C -` resume on transient failures, but a 404'd
+                // .part is useless — drop it so retries start clean.
+                let _ = std::fs::remove_file(&tmp_path);
+                break Err(format!(
+                    "curl exited {status} downloading {url} (HTTP error or network failure)"
+                ));
+            }
+            Ok(None) => continue,
+            Err(e) => break Err(format!("wait: {e}")),
+        }
+    };
+    tracker.set_child_pid(None);
+    if let Err(e) = result {
+        return fail(e);
+    }
+
+    // Sanity floor: a real GGUF is within ~2× of the registry estimate;
+    // an HTML error page or truncated CDN response is nowhere close.
+    let got = std::fs::metadata(&tmp_path).map(|m| m.len()).unwrap_or(0);
+    let floor = (info.size_mb * 1024 * 1024) / 2;
+    if got < floor {
+        let _ = std::fs::remove_file(&tmp_path);
+        return fail(format!(
+            "{} downloaded {got} bytes but ~{} MB expected — server likely returned an error body",
+            info.filename, info.size_mb
+        ));
+    }
+
+    if let Err(e) = std::fs::rename(&tmp_path, &dest_path) {
+        return fail(format!("rename: {e}"));
+    }
+    tracker.update(|s| {
+        s.state = DownloadState::Done;
+        s.bytes_done = got;
+        s.total_bytes = got;
+    });
+    eprintln!("[nib][model] download complete: {id}");
+    true
 }
 
 #[cfg(test)]

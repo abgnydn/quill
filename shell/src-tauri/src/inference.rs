@@ -54,6 +54,16 @@ struct AdapterCell(LlamaLoraAdapter);
 unsafe impl Send for AdapterCell {}
 unsafe impl Sync for AdapterCell {}
 
+/// One finished generation. `truncated` = hit the max-new-tokens cap
+/// without a natural stop (EOG token / stop marker) — the text is cut
+/// off mid-thought and callers must not silently paste it over the
+/// user's original.
+#[derive(Clone, Debug)]
+pub struct Generation {
+    pub text: String,
+    pub truncated: bool,
+}
+
 pub struct RewriteEngine {
     backend: LlamaBackend,
     model: LlamaModel,
@@ -89,7 +99,7 @@ impl RewriteEngine {
                 let ad = model
                     .lora_adapter_init(&path)
                     .with_context(|| format!("loading LoRA adapter at {}", path.display()))?;
-                eprintln!("[quill] personal LoRA adapter loaded from {}", path.display());
+                eprintln!("[nib] personal LoRA adapter loaded from {}", path.display());
                 (Some(Mutex::new(AdapterCell(ad))), Some(path))
             }
             None => (None, None),
@@ -117,7 +127,7 @@ impl RewriteEngine {
     /// Run a single-shot rewrite. Convenience wrapper that buffers tokens
     /// from `rewrite_streaming` into a single String. Use the streaming
     /// variant when you want per-token UI updates.
-    pub fn rewrite(&self, text: &str, instruction: Option<&str>) -> Result<String> {
+    pub fn rewrite(&self, text: &str, instruction: Option<&str>) -> Result<Generation> {
         self.rewrite_streaming(text, instruction, |_| {})
     }
 
@@ -125,84 +135,18 @@ impl RewriteEngine {
     /// generated text as it's decoded; the same accumulated text is also
     /// returned at the end (with `<|im_end|>` stripped). Callbacks are
     /// invoked from the calling thread, in order, synchronously.
+    /// Greedy decoding — deterministic; use [`rewrite_variants`] for
+    /// sampled alternatives.
     pub fn rewrite_streaming<F>(
         &self,
         text: &str,
         instruction: Option<&str>,
-        mut on_token: F,
-    ) -> Result<String>
+        on_token: F,
+    ) -> Result<Generation>
     where
         F: FnMut(&str),
     {
-        let prompt = PROMPT_TEMPLATE
-            .replace("{instruction}", instruction.unwrap_or(DEFAULT_INSTRUCTION))
-            .replace("{source}", text);
-
-        let ctx_params = LlamaContextParams::default().with_n_ctx(NonZeroU32::new(self.ctx_size));
-        let mut ctx = self
-            .model
-            .new_context(&self.backend, ctx_params)
-            .context("creating llama context")?;
-
-        if let Some(adapter_mu) = &self.adapter {
-            let mut cell = adapter_mu
-                .lock()
-                .map_err(|_| anyhow::anyhow!("adapter mutex poisoned"))?;
-            ctx.lora_adapter_set(&mut cell.0, self.adapter_scale)
-                .map_err(|e| anyhow::anyhow!("lora_adapter_set: {e}"))?;
-        }
-
-        let tokens = self
-            .model
-            .str_to_token(&prompt, AddBos::Always)
-            .context("tokenizing prompt")?;
-        let prompt_len = tokens.len() as i32;
-        let n_len = prompt_len + self.max_new_tokens;
-        if n_len > ctx.n_ctx() as i32 {
-            bail!(
-                "prompt + max_new_tokens ({n_len}) exceeds context size ({})",
-                ctx.n_ctx()
-            );
-        }
-
-        let mut batch = LlamaBatch::new(512.max(prompt_len as usize), 1);
-        let last_idx = prompt_len - 1;
-        for (i, tok) in tokens.into_iter().enumerate() {
-            batch.add(tok, i as i32, &[0], i as i32 == last_idx)?;
-        }
-        ctx.decode(&mut batch).context("initial decode")?;
-
-        let mut sampler = LlamaSampler::chain_simple([
-            LlamaSampler::dist(1337),
-            LlamaSampler::greedy(),
-        ]);
-        let mut decoder = encoding_rs::UTF_8.new_decoder();
-        let mut out = String::new();
-        let mut n_cur = batch.n_tokens();
-
-        while n_cur <= n_len {
-            let token = sampler.sample(&ctx, batch.n_tokens() - 1);
-            sampler.accept(token);
-            if self.model.is_eog_token(token) {
-                break;
-            }
-            let piece = self
-                .model
-                .token_to_piece(token, &mut decoder, true, None)
-                .context("token_to_piece")?;
-            if piece.contains(STOP_MARKER) {
-                break;
-            }
-            out.push_str(&piece);
-            on_token(&piece);
-
-            batch.clear();
-            batch.add(token, n_cur, &[0], true)?;
-            ctx.decode(&mut batch).context("decode step")?;
-            n_cur += 1;
-        }
-
-        Ok(out.replace(STOP_MARKER, "").trim().to_string())
+        self.generate(text, instruction, LlamaSampler::greedy(), on_token)
     }
 
     /// Generate up to `n` rewrite variants using independent samplers and
@@ -249,7 +193,7 @@ impl RewriteEngine {
                 ]),
             };
             let out = self.rewrite_one(text, instruction, sampler)?;
-            let trimmed = out.trim().to_string();
+            let trimmed = out.text.trim().to_string();
             if trimmed.is_empty() {
                 continue;
             }
@@ -261,17 +205,32 @@ impl RewriteEngine {
     }
 
     /// Single-shot rewrite with a caller-supplied sampler. Shared between
-    /// `rewrite_streaming` (greedy chain), `rewrite_variants` (per-variant
-    /// sampler), and the `quill-rewrite` CLI (when called with --temperature
+    /// `rewrite_streaming` (greedy), `rewrite_variants` (per-variant
+    /// sampler), and the `nib-rewrite` CLI (when called with --temperature
     /// for RSFT data generation). Parameter-driven so the public APIs
-    /// don't accidentally share sampler state. Each call builds a fresh
-    /// context, so concurrent / sequential calls don't share KV cache.
+    /// don't accidentally share sampler state.
     pub fn rewrite_one(
         &self,
         text: &str,
         instruction: Option<&str>,
+        sampler: LlamaSampler,
+    ) -> Result<Generation> {
+        self.generate(text, instruction, sampler, |_| {})
+    }
+
+    /// The one decode loop everything routes through. Each call builds a
+    /// fresh context, so concurrent / sequential calls don't share KV
+    /// cache state.
+    fn generate<F>(
+        &self,
+        text: &str,
+        instruction: Option<&str>,
         mut sampler: LlamaSampler,
-    ) -> Result<String> {
+        mut on_token: F,
+    ) -> Result<Generation>
+    where
+        F: FnMut(&str),
+    {
         let prompt = PROMPT_TEMPLATE
             .replace("{instruction}", instruction.unwrap_or(DEFAULT_INSTRUCTION))
             .replace("{source}", text);
@@ -313,21 +272,28 @@ impl RewriteEngine {
         let mut decoder = encoding_rs::UTF_8.new_decoder();
         let mut out = String::new();
         let mut n_cur = batch.n_tokens();
+        let mut truncated = true; // flipped off on a natural stop
 
-        while n_cur <= n_len {
+        // Strictly `<`: with `<=` this generated max_new_tokens+1 tokens
+        // and, when the prompt filled the context exactly, attempted a
+        // decode at KV position n_ctx (out of range).
+        while n_cur < n_len {
             let token = sampler.sample(&ctx, batch.n_tokens() - 1);
             sampler.accept(token);
             if self.model.is_eog_token(token) {
+                truncated = false;
                 break;
             }
             let piece = self
                 .model
                 .token_to_piece(token, &mut decoder, true, None)
                 .context("token_to_piece")?;
-            if piece.contains("<end_of_turn>") {
+            if piece.contains(STOP_MARKER) {
+                truncated = false;
                 break;
             }
             out.push_str(&piece);
+            on_token(&piece);
 
             batch.clear();
             batch.add(token, n_cur, &[0], true)?;
@@ -335,6 +301,9 @@ impl RewriteEngine {
             n_cur += 1;
         }
 
-        Ok(out.replace("<end_of_turn>", "").trim().to_string())
+        Ok(Generation {
+            text: out.replace(STOP_MARKER, "").trim().to_string(),
+            truncated,
+        })
     }
 }

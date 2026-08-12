@@ -105,7 +105,7 @@ drift** by construction.
 ### 2. Sample with temperature, score with the eval
 
 `train/scripts/sample_completions.py` loops over `(source, tone,
-formality)` combinations and calls `quill-rewrite` (the production
+formality)` combinations and calls `nib-rewrite` (the production
 inference binary) with `--temperature 0.8 --top-p 0.95 --seed
 <random>` to generate 8-16 candidates per seed. Each candidate is
 scored via the eval's `score_output`. Passing candidates are written
@@ -133,15 +133,16 @@ changes generation to generation.
 The notebook's final cells run llama.cpp's `convert_lora_to_gguf.py`
 on the saved PEFT adapter directory and produce a ~35 MB f16 GGUF.
 This sits on top of the Qwen base at runtime via llama.cpp's
-`lora_adapter_init` (already wired into `quill-rewrite`). Every
+`lora_adapter_init` (already wired into `nib-rewrite`). Every
 future generation ships as a tiny adapter swap, not a full model
 re-download.
 
 ### 5. Eval on held-out, look at what failed, write targeted seeds
 
-Each generation's failures are inspected. The `v2.2 = 93.3%` step
-above came partly from 10 hand-curated seeds (`seeds-v2_2-targeted.
-jsonl`) written specifically to cover v2.1's failure modes:
+Each generation's failures are inspected. The `v2.2 = 88.9%` step
+above (93.3% on the earlier 60-case holdout) came partly from 10
+hand-curated seeds (`seeds-v2_2-targeted.jsonl`) written
+specifically to cover v2.1's failure modes:
 scientific notation preservation (`n=X`, `p<X`, `X±Y`), abbreviation
 preservation (IATA codes, country codes, stock tickers), tight
 word-count discipline. Three of v2.1's eight held-out failures
@@ -247,8 +248,8 @@ To push past the v2.2 plateau, in rough order of expected payoff:
 ## Reproduce it
 
 ```bash
-git clone https://github.com/abgnydn/quill
-cd quill/train
+git clone https://github.com/abgnydn/nib
+cd nib/train
 ```
 
 Then either:

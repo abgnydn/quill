@@ -21,7 +21,10 @@ pub fn check(
     crate::wire::check_text_filtered(&mut linter, text, &snap.ignored_words)
 }
 
-#[tauri::command]
+// `async` so the qvac probe / engine-mutex peek never runs on the main
+// thread (the first call execs `llama-cli --version`, and is_loaded can
+// briefly contend with a running rewrite).
+#[tauri::command(async)]
 pub fn capabilities(
     state: State<'_, RewriteState>,
     app: tauri::AppHandle,
@@ -46,7 +49,7 @@ pub fn capabilities(
 #[tauri::command]
 pub fn overlay_ping(stage: &str, count: u32, detail: Option<String>) {
     eprintln!(
-        "[quill][overlay-js] {stage} count={count}{}",
+        "[nib][overlay-js] {stage} count={count}{}",
         detail.map(|d| format!(" {d}")).unwrap_or_default()
     );
 }
@@ -87,7 +90,8 @@ pub struct ApplyContext {
 /// Apply a correction to the currently-focused text field via AXUI.
 /// Selects [start, end) then replaces with `replacement`. Journals the
 /// (source, applied) pair when `context` is supplied.
-#[tauri::command]
+/// `async`: the clipboard-fallback path blocks ~150 ms for paste + restore.
+#[tauri::command(async)]
 pub fn apply_suggestion(
     start: u32,
     end: u32,
@@ -122,9 +126,10 @@ pub fn apply_suggestion(
 }
 
 /// Record an event without going through AXUI write-back. Used by the
-/// main Quill window — it mutates its own textarea via plain JS and just
+/// main Nib window — it mutates its own textarea via plain JS and just
 /// wants to be counted in the personalization journal.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // wire contract with main.js — flattened lint fields
 pub fn journal_log(
     kind: String,
     source_text: String,
@@ -160,13 +165,21 @@ pub fn journal_stats(journal: State<'_, Arc<Journal>>) -> JournalStats {
     journal.stats()
 }
 
-#[tauri::command]
+/// Export the journal's training pairs. The destination is chosen HERE,
+/// not by the webview: accepting an arbitrary path from JS handed any
+/// renderer compromise a write-anywhere primitive, and the old /tmp
+/// default left the user's typed text world-readable. Files land 0600
+/// in `~/Library/Application Support/Nib/exports/`. Returns the path.
+#[tauri::command(async)]
 pub fn journal_export(
-    out_path: String,
     journal: State<'_, Arc<Journal>>,
-) -> Result<usize, String> {
-    let path = std::path::PathBuf::from(out_path);
-    journal.export_training_pairs(&path).map_err(|e| e.to_string())
+) -> Result<serde_json::Value, String> {
+    let dir = journal::exports_dir().map_err(|e| e.to_string())?;
+    // Colons render oddly in Finder — keep the timestamp filename-safe.
+    let ts = journal::now_rfc3339().replace(':', "-");
+    let path = dir.join(format!("nib-training-{ts}.jsonl"));
+    let n = journal.export_training_pairs(&path).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "path": path.display().to_string(), "pairs": n }))
 }
 
 #[tauri::command]
@@ -176,32 +189,31 @@ pub fn journal_clear(journal: State<'_, Arc<Journal>>) -> Result<u64, String> {
 
 use crate::training::{SharedTraining, TrainingStatus};
 
-#[tauri::command]
-pub fn train_personal_start(
-    journal: State<'_, Arc<Journal>>,
-    training: State<'_, SharedTraining>,
-    backend: State<'_, Arc<crate::qvac::BackendConfig>>,
+/// Shared personal-training starter — the `train_personal_start` command
+/// and the tray "Train personal adapter…" item both route through here so
+/// they can't drift (the tray used to silently take the legacy Modal path).
+///
+/// Local backend (QVAC + bundled base model) is preferred — free, ~5 min
+/// on Metal. The Modal fallback uploads the journal export to a cloud GPU
+/// and trains a legacy Gemma adapter, so it requires the explicit
+/// `allow_cloud_training` config opt-in.
+pub fn start_personal_training(
+    journal: &Journal,
+    training: &crate::training::TrainingState,
+    backend: &crate::qvac::BackendConfig,
+    config: &crate::config::ConfigStore,
 ) -> Result<TrainingStatus, String> {
-    // 1. Export the current journal to a fresh temp file.
-    let tmp = std::env::temp_dir().join(format!(
-        "quill-training-{}.jsonl",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0)
-    ));
+    let dir = journal::exports_dir().map_err(|e| e.to_string())?;
+    let ts = journal::now_rfc3339().replace(':', "-");
+    let tmp = dir.join(format!("personal-train-{ts}.jsonl"));
     let n = journal.export_training_pairs(&tmp).map_err(|e| e.to_string())?;
     if n < 10 {
         return Err(format!(
             "only {n} applied edits in the journal — need ≥10 before training is useful"
         ));
     }
-    eprintln!("[quill][train] exported {n} pairs to {}", tmp.display());
+    eprintln!("[nib][train] exported {n} pairs to {}", tmp.display());
 
-    // Local backend (QVAC + bundled base model) is preferred — free, ~5
-    // min on Metal vs ~15 min + $0.20 on Modal. Fall back to Modal only
-    // when the local toolchain isn't fully bundled (e.g. dev build
-    // without install-dev.sh having staged QVAC).
     if backend.local_ready() {
         let finetune = backend.finetune_bin.clone().unwrap();
         let base = backend.base_model.clone().unwrap();
@@ -210,11 +222,30 @@ pub fn train_personal_start(
         training
             .start_local(finetune, base, tmp, out)
             .map_err(|e| e.to_string())?;
-    } else {
-        eprintln!("[quill][train] local backend not ready, falling back to Modal");
+    } else if config.snapshot().allow_cloud_training {
+        eprintln!("[nib][train] local backend not ready — using Modal (user opted in)");
         training.start(tmp).map_err(|e| e.to_string())?;
+    } else {
+        return Err(
+            "local training backend isn't available, and cloud training is \
+             disabled. Enable allow_cloud_training in config.json to allow \
+             uploading your journal to Modal (it trains a legacy Gemma \
+             adapter — not recommended), or install the QVAC toolchain via \
+             scripts/install-dev.sh."
+                .into(),
+        );
     }
     Ok(training.status())
+}
+
+#[tauri::command(async)]
+pub fn train_personal_start(
+    journal: State<'_, Arc<Journal>>,
+    training: State<'_, SharedTraining>,
+    backend: State<'_, Arc<crate::qvac::BackendConfig>>,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<TrainingStatus, String> {
+    start_personal_training(&journal, &training, &backend, &config)
 }
 
 #[tauri::command]
@@ -222,14 +253,27 @@ pub fn train_personal_status(training: State<'_, SharedTraining>) -> TrainingSta
     training.status()
 }
 
-/// Copy a successfully-produced adapter into Quill's Application Support
-/// dir. Quill auto-loads it on next launch.
+/// Copy a successfully-produced adapter into Nib's Application Support
+/// dir. Nib auto-loads it on next launch. Also stamps the retrain
+/// bookkeeping — without this, a manually-run training left
+/// `last_train_event_count` stale and the auto-retrain scheduler
+/// immediately re-fired on the same events.
 #[tauri::command]
-pub fn train_personal_install(training: State<'_, SharedTraining>) -> Result<String, String> {
+pub fn train_personal_install(
+    training: State<'_, SharedTraining>,
+    journal: State<'_, Arc<Journal>>,
+    config: State<'_, Arc<crate::config::ConfigStore>>,
+) -> Result<String, String> {
     let dest = crate::state::personal_adapter_path()
         .ok_or_else(|| "HOME not resolvable".to_string())?;
     let bytes = training.install(&dest)?;
-    eprintln!("[quill][train] installed {bytes}B → {}", dest.display());
+    eprintln!("[nib][train] installed {bytes}B → {}", dest.display());
+    let stats = journal.stats();
+    let _ = config.update(|c| {
+        c.last_train_event_count = stats.applied + stats.rewrite_applied;
+        c.last_train_at = Some(crate::config::now_rfc3339());
+        c.pending_relaunch = true;
+    });
     Ok(dest.display().to_string())
 }
 
@@ -488,13 +532,26 @@ pub fn model_download(
     if current.state == crate::models::DownloadState::Running {
         return Err(format!("download already running: {}", current.model_id));
     }
-    // Adapter entries: download the base (the adapter ships bundled).
-    // For standalone models this returns `id` itself. Returns None when
-    // everything's already on disk → nothing to do.
-    let target = crate::models::download_target(&app, &id)
-        .ok_or_else(|| format!("{id} is already installed"))?
-        .to_string();
-    crate::models::spawn_download(target, tracker.inner().clone(), None);
+    // Everything `id` needs that's missing and downloadable, in order
+    // (base first, then the adapter itself — an adapter entry used to
+    // stop after the base, leaving the premium tier uninstallable).
+    let targets: Vec<String> = crate::models::download_targets(&app, &id)
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+    if targets.is_empty() {
+        let stuck = crate::models::missing_undownloadable(&app, &id);
+        return Err(if stuck.is_empty() {
+            format!("{id} is already installed")
+        } else {
+            format!(
+                "{id} is missing {} which has no download URL in this build — \
+                 reinstall the Full bundle or wait for the release asset",
+                stuck.join(", ")
+            )
+        });
+    }
+    crate::models::spawn_download(targets, tracker.inner().clone(), None);
     Ok(tracker.snapshot())
 }
 
@@ -505,14 +562,17 @@ pub fn model_download_status(
     tracker.snapshot()
 }
 
-#[tauri::command]
+// `async`: the full llama.cpp decode loop runs here — on the main thread
+// it froze the tray, window dragging, and every other IPC call for the
+// whole generation (and starved the very token events it was emitting).
+#[tauri::command(async)]
 pub fn rewrite(
     text: &str,
     instruction: Option<String>,
     session: Option<String>,
     state: State<'_, RewriteState>,
     app: tauri::AppHandle,
-) -> Result<String, String> {
+) -> Result<crate::wire::RewriteOutput, String> {
     #[cfg(feature = "llm")]
     {
         use tauri::Emitter;
@@ -527,18 +587,9 @@ pub fn rewrite(
                 let session_for_cb = session.clone();
                 let result = engine
                     .rewrite_streaming(text, instruction.as_deref(), move |delta| {
-                        // Best-effort emit; if the overlay isn't subscribed we
-                        // just keep generating tokens.
-                        let _ = app_clone.emit_to(
-                            "overlay",
-                            "rewrite-token",
-                            serde_json::json!({
-                                "session": session_for_cb,
-                                "delta": delta,
-                                "done": false,
-                            }),
-                        );
-                        // Also broadcast to the main window for its rewrite panel.
+                        // Single broadcast — it reaches every window's
+                        // listeners. (A targeted emit_to("overlay") on top
+                        // of this made the overlay render each token twice.)
                         let _ = app_clone.emit(
                             "rewrite-token",
                             serde_json::json!({
@@ -549,19 +600,17 @@ pub fn rewrite(
                         );
                     })
                     .map_err(|e| format!("{e:#}"))?;
-                let _ = app.emit_to(
-                    "overlay",
-                    "rewrite-token",
-                    serde_json::json!({"session": session, "delta": "", "done": true}),
-                );
                 let _ = app.emit(
                     "rewrite-token",
                     serde_json::json!({"session": session, "delta": "", "done": true}),
                 );
-                Ok(result)
+                Ok(crate::wire::RewriteOutput {
+                    text: result.text,
+                    truncated: result.truncated,
+                })
             }
             None => Err(
-                "no model loaded — set QUILL_MODEL=<path-to.gguf> before launching".into(),
+                "no model loaded — set NIB_MODEL=<path-to.gguf> before launching".into(),
             ),
         }
     }
@@ -577,7 +626,7 @@ pub fn rewrite(
 /// `rewrite` path); the rest use temp=0.7/top_p=0.9 with distinct RNG seeds.
 /// Wall-clock is ~N× single-rewrite latency since each variant builds its
 /// own context — the frontend should show a spinner.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn rewrite_variants(
     text: &str,
     instruction: Option<String>,
@@ -596,7 +645,7 @@ pub fn rewrite_variants(
                 .rewrite_variants(text, instruction.as_deref(), n)
                 .map_err(|e| format!("{e:#}")),
             None => Err(
-                "no model loaded — set QUILL_MODEL=<path-to.gguf> before launching".into(),
+                "no model loaded — set NIB_MODEL=<path-to.gguf> before launching".into(),
             ),
         }
     }

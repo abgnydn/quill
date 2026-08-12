@@ -1,10 +1,15 @@
+# ─── LEGACY (Gemma 3 270M / CoEdIT era) — NOT the current pipeline ───────────
+# Nib v2.x ships LFM2.5-350M (default) + Qwen 2.5-1.5B + RSFT LoRA (premium).
+# The live training path is the rejection-sampling loop in RSFT_BOOTSTRAP.md,
+# run via train/colab/train_nib_v2.ipynb on Qwen. Kept for reference only.
+# ─────────────────────────────────────────────────────────────────────────────
 """Train Gemma 3 270M LoRA on CoEdIT on a Modal L4, end-to-end.
 
 Why this instead of Colab:
 - L4 supports bf16 → real ~8-15 min wall-clock (not 4.5 h fp32 on T4).
 - Reliable: Modal doesn't randomly kill jobs.
 - No Drive / mount / notebook-kernel fragility — script runs from your Mac
-  terminal, GGUF lands directly in `./checkpoints/quill-q4_k_m.gguf`.
+  terminal, GGUF lands directly in `./checkpoints/nib-q4_k_m.gguf`.
 
 Setup (one time, ~2 min):
     pip install modal
@@ -14,7 +19,7 @@ Run (from `~/quill/train`):
     HF_TOKEN=hf_xxx modal run modal_train.py
 
 This streams logs to your terminal. When it finishes, the GGUF is downloaded
-to `./checkpoints/quill-q4_k_m.gguf` and an `adapter/` directory contains
+to `./checkpoints/nib-q4_k_m.gguf` and an `adapter/` directory contains
 the LoRA weights (in case you want to retrain quantization later without
 redoing training).
 
@@ -28,7 +33,7 @@ import subprocess
 
 import modal
 
-APP_NAME = "quill-train"
+APP_NAME = "nib-train"
 
 # --- Image: CUDA Linux, exactly the deps that work for Gemma 3 270M -----------
 
@@ -53,7 +58,7 @@ image = (
 app = modal.App(APP_NAME, image=image)
 
 # Volume holds artifacts across runs and lets us download the GGUF cheaply.
-volume = modal.Volume.from_name("quill-artifacts", create_if_missing=True)
+volume = modal.Volume.from_name("nib-artifacts", create_if_missing=True)
 
 GEMMA_CHAT_TEMPLATE = (
     "<start_of_turn>user\n{src}<end_of_turn>\n"
@@ -82,8 +87,8 @@ def train_and_export() -> dict:
         raise RuntimeError("HF_TOKEN not set — Gemma 3 is license-gated.")
     login(token=hf_token)
 
-    print(f"[quill] GPU: {torch.cuda.get_device_name(0)}")
-    print(f"[quill] bf16 supported: {is_bfloat16_supported()}")
+    print(f"[nib] GPU: {torch.cuda.get_device_name(0)}")
+    print(f"[nib] bf16 supported: {is_bfloat16_supported()}")
 
     # CoEdIT prompts + targets fit comfortably in 256 tokens (95th percentile
     # is around 180). Shorter = quadratically less attention compute.
@@ -122,7 +127,7 @@ def train_and_export() -> dict:
     ds = load_dataset("grammarly/coedit")
     train_ds = ds["train"].map(fmt, remove_columns=ds["train"].column_names)
     eval_ds = ds["validation"].map(fmt, remove_columns=ds["validation"].column_names).select(range(1000))
-    print(f"[quill] train rows={len(train_ds)} eval rows={len(eval_ds)}")
+    print(f"[nib] train rows={len(train_ds)} eval rows={len(eval_ds)}")
 
     # --- Train -------------------------------------------------------------
     from trl import SFTConfig, SFTTrainer
@@ -163,7 +168,7 @@ def train_and_export() -> dict:
     t0 = time.time()
     train_result = trainer.train()
     train_seconds = time.time() - t0
-    print(f"[quill] training done in {train_seconds/60:.1f} min")
+    print(f"[nib] training done in {train_seconds/60:.1f} min")
     trainer.save_model(str(OUT))
     tokenizer.save_pretrained(str(OUT))
 
@@ -172,7 +177,7 @@ def train_and_export() -> dict:
     if MERGED.exists():
         subprocess.run(["rm", "-rf", str(MERGED)], check=True)
     model.save_pretrained_merged(str(MERGED), tokenizer, save_method="merged_16bit")
-    print(f"[quill] merged 16-bit saved to {MERGED}")
+    print(f"[nib] merged 16-bit saved to {MERGED}")
 
     # --- Manual llama.cpp conversion (bypasses broken unsloth_zoo path) ---
     LLAMA_DIR = Path("/tmp/llama.cpp")
@@ -187,7 +192,7 @@ def train_and_export() -> dict:
         check=True,
     )
 
-    F16_GGUF = Path("/artifacts/quill-f16.gguf")
+    F16_GGUF = Path("/artifacts/nib-f16.gguf")
     subprocess.run(
         [
             "python", str(LLAMA_DIR / "convert_hf_to_gguf.py"),
@@ -212,7 +217,7 @@ def train_and_export() -> dict:
         cwd=str(LLAMA_DIR), check=True,
     )
 
-    Q4_GGUF = Path("/artifacts/quill-q4_k_m.gguf")
+    Q4_GGUF = Path("/artifacts/nib-q4_k_m.gguf")
     subprocess.run(
         [str(LLAMA_DIR / "build" / "bin" / "llama-quantize"),
          str(F16_GGUF), str(Q4_GGUF), "q4_k_m"],
@@ -220,7 +225,7 @@ def train_and_export() -> dict:
     )
 
     size_mb = Q4_GGUF.stat().st_size / (1024 * 1024)
-    print(f"[quill] q4_k_m GGUF: {size_mb:.1f} MB at {Q4_GGUF}")
+    print(f"[nib] q4_k_m GGUF: {size_mb:.1f} MB at {Q4_GGUF}")
 
     volume.commit()
     return {
@@ -233,24 +238,24 @@ def train_and_export() -> dict:
 
 @app.local_entrypoint()
 def main():
-    print("[quill] kicking off Modal L4 training …")
+    print("[nib] kicking off Modal L4 training …")
     result = train_and_export.remote()
-    print(f"[quill] done: {result}")
+    print(f"[nib] done: {result}")
 
     # Stream artifacts back to ./checkpoints/
     local_dir = pathlib.Path("./checkpoints")
     local_dir.mkdir(parents=True, exist_ok=True)
-    print(f"[quill] downloading GGUF to {local_dir}/quill-q4_k_m.gguf …")
+    print(f"[nib] downloading GGUF to {local_dir}/nib-q4_k_m.gguf …")
     subprocess.run(
-        ["modal", "volume", "get", "--force", "quill-artifacts",
-         "quill-q4_k_m.gguf", str(local_dir / "quill-q4_k_m.gguf")],
+        ["modal", "volume", "get", "--force", "nib-artifacts",
+         "nib-q4_k_m.gguf", str(local_dir / "nib-q4_k_m.gguf")],
         check=True,
     )
-    print(f"[quill] also fetching the LoRA adapter dir …")
+    print("[nib] also fetching the LoRA adapter dir …")
     subprocess.run(
-        ["modal", "volume", "get", "--force", "quill-artifacts",
+        ["modal", "volume", "get", "--force", "nib-artifacts",
          "gemma3-270m-coedit-lora", str(local_dir / "gemma3-270m-coedit-lora")],
         check=True,
     )
-    print("[quill] artifacts:")
+    print("[nib] artifacts:")
     subprocess.run(["ls", "-lah", str(local_dir)], check=True)

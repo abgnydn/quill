@@ -25,6 +25,15 @@ pub struct WireLint {
     pub suggestions: Vec<WireSuggestion>,
 }
 
+/// Result of an LLM rewrite. `truncated` is true when generation hit the
+/// max-new-tokens cap without reaching a natural stop — callers must not
+/// silently replace the user's text with a cut-off rewrite.
+#[derive(Serialize, Clone, Debug)]
+pub struct RewriteOutput {
+    pub text: String,
+    pub truncated: bool,
+}
+
 #[derive(Serialize)]
 pub struct Capabilities {
     pub llm_built: bool,
@@ -89,12 +98,15 @@ pub fn check_text_filtered(
     let mut out = wire_lints_from(linter.lint(&document));
     if !ignored.is_empty() {
         let ignored_lower: Vec<String> = ignored.iter().map(|w| w.to_lowercase()).collect();
+        // Harper spans are Unicode *char* offsets, not byte offsets — index
+        // by chars or the filter silently misses on any non-ASCII prefix.
+        let chars: Vec<char> = text.chars().collect();
         out.retain(|lint| {
-            let span = match text.get(lint.start..lint.end) {
-                Some(s) => s.to_lowercase(),
+            let span = match chars.get(lint.start..lint.end) {
+                Some(s) => s.iter().collect::<String>().to_lowercase(),
                 None => return true,
             };
-            !ignored_lower.iter().any(|w| *w == span)
+            !ignored_lower.contains(&span)
         });
     }
     out
@@ -193,6 +205,32 @@ mod tests {
             text.get(l.start..l.end).map(|s| s.eq_ignore_ascii_case("bitnet")).unwrap_or(false)
         });
         assert!(!still_flagged, "expected 'BitNet' lint to be filtered out");
+    }
+
+    /// Harper spans are char offsets; the filter must keep working when
+    /// non-ASCII text precedes the flagged word (regression: byte-slicing
+    /// silently disabled the personal dictionary after any emoji/accent).
+    #[test]
+    fn ignored_words_filter_survives_non_ascii_prefix() {
+        use harper_core::Dialect;
+        use harper_core::spell::FstDictionary;
+        let mut linter = LintGroup::new_curated(FstDictionary::curated(), Dialect::American);
+        let text = "café ☕ and BitNet is fast";
+        let chars: Vec<char> = text.chars().collect();
+        let unfiltered = check_text_with(&mut linter, text);
+        let bitnet_flagged = unfiltered.iter().any(|l| {
+            chars.get(l.start..l.end)
+                .map(|s| s.iter().collect::<String>().eq_ignore_ascii_case("bitnet"))
+                .unwrap_or(false)
+        });
+        assert!(bitnet_flagged, "expected Harper to flag 'BitNet' after non-ASCII prefix");
+        let filtered = check_text_filtered(&mut linter, text, &["bitnet".to_string()]);
+        let still_flagged = filtered.iter().any(|l| {
+            chars.get(l.start..l.end)
+                .map(|s| s.iter().collect::<String>().eq_ignore_ascii_case("bitnet"))
+                .unwrap_or(false)
+        });
+        assert!(!still_flagged, "'BitNet' lint should be filtered despite non-ASCII prefix");
     }
 
     #[test]

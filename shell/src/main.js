@@ -135,7 +135,7 @@ async function probeCapabilities() {
       rewriteHint.textContent = "";
     } else if (c.llm_built && !c.model_loaded) {
       label = "harper + llm (no model)";
-      rewriteHint.textContent = "set QUILL_MODEL to your .gguf and relaunch";
+      rewriteHint.textContent = "set NIB_MODEL to your .gguf and relaunch";
     } else {
       rewriteHint.textContent = "rebuild with --features llm to enable";
     }
@@ -293,10 +293,14 @@ async function runRewrite() {
   });
 
   try {
+    // rewrite returns { text, truncated } — truncated means generation hit
+    // the token cap and the tail is missing.
     const out = await invoke("rewrite", { text, instruction: null, session });
     const dt = (performance.now() - t0).toFixed(0);
-    if (!rewriteText.textContent) rewriteText.textContent = out;
-    rewriteHint.textContent = `${dt} ms`;
+    if (!rewriteText.textContent) rewriteText.textContent = out.text;
+    rewriteHint.textContent = out.truncated
+      ? `${dt} ms · ⚠ cut off at the length limit — try a shorter selection`
+      : `${dt} ms`;
   } catch (err) {
     rewriteText.textContent = `error: ${err}`;
     rewriteHint.textContent = "";
@@ -473,7 +477,7 @@ async function refreshPersonal() {
       const enough = (s.applied || 0) + (s.rewrite_applied || 0) >= 10;
       personalTrain.disabled = !enough;
       personalTrain.title = enough
-        ? "Train a personal LoRA adapter on Modal (~15 min, ~$0.20)"
+        ? "Train a personal LoRA adapter (local, ~5 min on Metal; cloud fallback only if you opt in)"
         : `Need ≥10 applied edits to train (have ${(s.applied||0)+(s.rewrite_applied||0)})`;
     }
   } catch (e) {
@@ -482,14 +486,12 @@ async function refreshPersonal() {
 }
 
 personalExport.addEventListener("click", async () => {
-  const ts = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
-  const out = `~/Downloads/quill-training-${ts}.jsonl`.replace(/^~/, `${(await invoke("capabilities"))?.home ?? ""}`);
-  // We can't read $HOME from JS — let Rust resolve it. Pass an absolute path.
-  const path = `/tmp/quill-training-${ts}.jsonl`;
+  // Rust picks the destination (0600 inside the app data dir) — the
+  // journal is the user's typed text and must not land in shared /tmp.
   try {
-    const n = await invoke("journal_export", { outPath: path });
-    personalExport.textContent = `✓ ${n} pairs → ${path}`;
-    setTimeout(() => (personalExport.textContent = "⤓ Export"), 4000);
+    const res = await invoke("journal_export");
+    personalExport.textContent = `✓ ${res.pairs} pairs → ${res.path}`;
+    setTimeout(() => (personalExport.textContent = "⤓ Export"), 6000);
   } catch (e) {
     personalExport.textContent = `error: ${e}`;
     setTimeout(() => (personalExport.textContent = "⤓ Export"), 4000);
@@ -559,20 +561,65 @@ async function pollTrainOnce() {
   }
 }
 
-personalTrain.addEventListener("click", async () => {
-  trainModal.classList.remove("hidden");
+function startTrainPolling() {
+  if (trainPollTimer) clearInterval(trainPollTimer);
+  trainPollTimer = setInterval(pollTrainOnce, 3000);
+}
+
+// "Start new run" appears only when a finished job is still parked in the
+// modal — so reopening never silently discards a result or double-starts.
+const trainRestart = document.createElement("button");
+trainRestart.textContent = "Start new run";
+trainRestart.classList.add("hidden");
+trainDismiss.insertAdjacentElement("beforebegin", trainRestart);
+
+async function startTraining() {
+  trainRestart.classList.add("hidden");
   trainError.textContent = "";
   trainStage.textContent = "";
   trainState.textContent = "starting…";
   try {
     const st = await invoke("train_personal_start");
     renderTrainStatus(st);
-    if (trainPollTimer) clearInterval(trainPollTimer);
-    trainPollTimer = setInterval(pollTrainOnce, 3000);
+    startTrainPolling();
   } catch (e) {
     trainState.textContent = "failed to start";
     trainError.textContent = String(e);
   }
+}
+
+personalTrain.addEventListener("click", async () => {
+  trainModal.classList.remove("hidden");
+  trainError.textContent = "";
+  // Re-attach to whatever is already happening instead of blindly calling
+  // start (which showed a bogus "failed to start" for a running job, and
+  // silently kicked off a fresh run over a finished one).
+  let cur = null;
+  try {
+    cur = await invoke("train_personal_status");
+  } catch (e) {
+    /* fall through to a fresh start */
+  }
+  if (cur && cur.state === "running") {
+    renderTrainStatus(cur);
+    startTrainPolling();
+    return;
+  }
+  if (cur && cur.state === "succeeded") {
+    renderTrainStatus(cur);
+    trainRestart.classList.remove("hidden");
+    return;
+  }
+  await startTraining();
+});
+
+trainRestart.addEventListener("click", async () => {
+  try {
+    await invoke("train_personal_reset");
+  } catch (e) {
+    /* reset of a finished job can't meaningfully fail — proceed */
+  }
+  await startTraining();
 });
 
 trainInstall.addEventListener("click", async () => {
@@ -600,8 +647,14 @@ trainDismiss.addEventListener("click", () => {
 async function refreshConfig() {
   try {
     const c = await invoke("config_get");
-    autoRetrain.checked = !!c.auto_retrain_enabled;
-    autoThreshold.value = c.auto_retrain_threshold || 25;
+    // Don't clobber an in-progress edit — this poller runs every 7s and
+    // used to overwrite the input before the change event committed it.
+    if (document.activeElement !== autoRetrain) {
+      autoRetrain.checked = !!c.auto_retrain_enabled;
+    }
+    if (document.activeElement !== autoThreshold) {
+      autoThreshold.value = c.auto_retrain_threshold || 25;
+    }
     autoLast.textContent = c.last_train_at
       ? `last trained ${c.last_train_at.slice(0, 10)}`
       : "never trained";
@@ -805,10 +858,16 @@ async function refreshSettings() {
 }
 
 // ───────── Model picker ─────────
+let lastModelListSnapshot = "";
 async function refreshModelList() {
   try {
     const models = await invoke("model_list");
     const dl = await invoke("model_download_status");
+    // Rebuilding the DOM every poll churns radio buttons under the
+    // user's cursor — skip when nothing actually changed.
+    const snapshot = JSON.stringify([models, dl]);
+    if (snapshot === lastModelListSnapshot) return;
+    lastModelListSnapshot = snapshot;
     renderModelList(models, dl);
   } catch (e) {
     console.error("model list refresh failed:", e);
@@ -832,13 +891,13 @@ function renderModelList(models, dlStatus) {
     // `m` is ModelInfoExt: info fields flattened in + installed/selected.
     const installed = m.installed;
     const baseInfo = m.requires_base ? byId.get(m.requires_base) : null;
-    // For adapter entries, the download routes to the base — match the
-    // progress tracker on EITHER the adapter id or its base id.
-    const dlMatchId = baseInfo ? baseInfo.id : m.id;
+    // Adapter entries download as a queue (base first, then the adapter
+    // itself) — match the progress tracker on either id.
+    const dlIds = baseInfo ? [baseInfo.id, m.id] : [m.id];
     const isDownloading =
-      dlStatus.model_id === dlMatchId && dlStatus.state === "running";
+      dlIds.includes(dlStatus.model_id) && dlStatus.state === "running";
     const dlFailed =
-      dlStatus.model_id === dlMatchId && dlStatus.state === "failed";
+      dlIds.includes(dlStatus.model_id) && dlStatus.state === "failed";
 
     const row = document.createElement("label");
     row.className = "model-row" + (m.selected ? " selected" : "");
@@ -853,10 +912,10 @@ function renderModelList(models, dlStatus) {
       if (!installed) return;
       try {
         await invoke("model_set_selected", { id: m.id });
-        showSettingsToast(`Selected ${m.display_name}. Quit and relaunch Nib to load it.`);
+        flashToast(`Selected ${m.display_name}. Quit and relaunch Nib to load it.`);
         refreshModelList();
       } catch (e) {
-        showSettingsToast(`Failed: ${e}`, true);
+        flashToast(`Failed: ${e}`, true);
       }
     });
     row.appendChild(radio);
@@ -882,18 +941,21 @@ function renderModelList(models, dlStatus) {
     blurb.textContent = m.blurb;
     info.appendChild(blurb);
 
-    // Download button: only when this entry needs network. For adapters,
-    // "this entry needs network" = its base is missing (the adapter
-    // itself ships bundled). The Rust side routes the click to the
-    // right id via `download_target`.
+    // Download button: only when this entry needs network. The Rust side
+    // resolves the full queue of missing files (base and/or adapter) via
+    // `download_targets`.
     const downloadable = !installed && !isDownloading && (m.url || baseInfo?.url);
     if (downloadable) {
       const btn = document.createElement("button");
       btn.className = "model-action";
-      const dlSize = baseInfo ? baseInfo.size_mb : m.size_mb;
-      const dlLabel = baseInfo
-        ? `↓ Download Qwen base (${dlSize} MB, one-time)`
-        : `↓ Download (${dlSize} MB)`;
+      let dlLabel;
+      if (baseInfo && !baseInfo.installed) {
+        dlLabel = `↓ Download (${baseInfo.size_mb} MB base, one-time + ${m.size_mb} MB adapter)`;
+      } else if (baseInfo) {
+        dlLabel = `↓ Download adapter (${m.size_mb} MB)`;
+      } else {
+        dlLabel = `↓ Download (${m.size_mb} MB)`;
+      }
       btn.textContent = dlLabel;
       btn.addEventListener("click", async (e) => {
         e.preventDefault();
@@ -901,20 +963,25 @@ function renderModelList(models, dlStatus) {
           await invoke("model_download", { id: m.id });
           refreshModelList();
         } catch (err) {
-          showSettingsToast(`Download failed: ${err}`, true);
+          flashToast(`Download failed: ${err}`, true);
         }
       });
       info.appendChild(btn);
     }
     if (isDownloading) {
-      const totalMb = baseInfo ? baseInfo.size_mb : m.size_mb;
+      // total_bytes tracks the CURRENT queue item (base vs adapter), so
+      // derive the label from the tracker, not this row's size.
+      const totalMb = dlStatus.total_bytes > 0
+        ? dlStatus.total_bytes / 1024 / 1024
+        : (baseInfo ? baseInfo.size_mb : m.size_mb);
       const pct = dlStatus.total_bytes > 0
         ? Math.min(100, (dlStatus.bytes_done / dlStatus.total_bytes) * 100)
         : 0;
+      const stageLabel = baseInfo && dlStatus.model_id === m.id ? " (adapter)" : "";
       const prog = document.createElement("div");
       prog.className = "model-progress";
       prog.innerHTML =
-        `Downloading… ${(dlStatus.bytes_done / 1024 / 1024).toFixed(1)} MB / ${totalMb} MB (${pct.toFixed(0)}%)` +
+        `Downloading${stageLabel}… ${(dlStatus.bytes_done / 1024 / 1024).toFixed(1)} MB / ${totalMb.toFixed(0)} MB (${pct.toFixed(0)}%)` +
         `<div class="model-progress-bar"><div style="width:${pct}%"></div></div>`;
       info.appendChild(prog);
     }
@@ -962,6 +1029,6 @@ refreshModelList();
 setInterval(refreshPersonal, 5000);
 setInterval(refreshConfig, 7000);
 setInterval(refreshSettings, 7000);
-// Faster cadence for the model list while a download is in flight so
-// the progress bar feels live.
+// 1.5s cadence keeps the download progress bar live; when nothing
+// changed the refresh short-circuits before touching the DOM.
 setInterval(refreshModelList, 1500);

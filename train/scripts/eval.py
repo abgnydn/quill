@@ -1,3 +1,7 @@
+# ─── LEGACY (Gemma 3 270M / CoEdIT era) — NOT the current eval ───────────────
+# The live, constraint-checked eval is train/eval/run_eval.py (harness v2,
+# 90-case held-out, semantic scoring). See RSFT_BOOTSTRAP.md. Kept for ref.
+# ─────────────────────────────────────────────────────────────────────────────
 """Evaluate a fine-tuned (or base) Gemma 3 270M on CoEdIT validation + JFLEG.
 
 Computes:

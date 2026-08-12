@@ -41,7 +41,7 @@ struct CursorEvent {
 
 pub fn spawn(app: AppHandle, regions: Arc<HotRegions>) {
     thread::Builder::new()
-        .name("quill-mouse-arbiter".into())
+        .name("nib-mouse-arbiter".into())
         .spawn(move || run(app, regions))
         .expect("spawn mouse-arbiter thread");
 }
@@ -67,7 +67,7 @@ fn run(app: AppHandle, regions: Arc<HotRegions>) {
             }
             let evt_name = if in_hot { "cursor-enter-hot" } else { "cursor-leave-hot" };
             eprintln!(
-                "[quill][arbiter] {evt_name} pos=({:.0},{:.0}) hot_regions={}",
+                "[nib][arbiter] {evt_name} pos=({:.0},{:.0}) hot_regions={}",
                 pos.0, pos.1,
                 regions.rects.lock().map(|g| g.len()).unwrap_or(0)
             );
@@ -83,7 +83,7 @@ fn run(app: AppHandle, regions: Arc<HotRegions>) {
             // can switch popovers as user moves between underlines.
             move_emit_tick = move_emit_tick.wrapping_add(1);
             let moved = (pos.0 - last_pos.0).abs() > 2.0 || (pos.1 - last_pos.1).abs() > 2.0;
-            if moved || move_emit_tick % 5 == 0 {
+            if moved || move_emit_tick.is_multiple_of(5) {
                 let _ = app.emit_to(
                     "overlay",
                     "cursor-move-hot",

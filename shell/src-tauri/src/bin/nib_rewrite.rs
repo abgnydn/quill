@@ -1,15 +1,15 @@
 //! Standalone CLI: rewrite a sentence using a quantized GGUF.
 //!
 //! Build:
-//!     cargo build --features llm --bin quill-rewrite --release
+//!     cargo build --features llm --bin nib-rewrite --release
 //!
 //! Run:
-//!     ./target/release/quill-rewrite \
-//!         --model ~/quill/train/checkpoints/quill-q4_k_m.gguf \
+//!     ./target/release/nib-rewrite \
+//!         --model ~/quill/train/checkpoints/nib-q4_k_m.gguf \
 //!         --text  "This is an test of the Harper grammer checker."
 //!
 //! For RSFT data generation, sample multiple completions:
-//!     ./target/release/quill-rewrite \
+//!     ./target/release/nib-rewrite \
 //!         --model … --text "…" --temperature 0.8 --top-p 0.95 --seed 42
 //!
 //! Lets you exercise the inference path without rebuilding the Tauri app.
@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use llama_cpp_2::sampling::LlamaSampler;
-use quill_lib::inference::RewriteEngine;
+use nib_lib::inference::RewriteEngine;
 
 fn main() -> anyhow::Result<()> {
     let mut args = env::args().skip(1);
@@ -68,16 +68,16 @@ fn main() -> anyhow::Result<()> {
     let model = model.ok_or_else(|| anyhow::anyhow!("--model PATH required"))?;
     let text = text.ok_or_else(|| anyhow::anyhow!("--text STRING required"))?;
 
-    eprintln!("[quill] loading {} …", model.display());
+    eprintln!("[nib] loading {} …", model.display());
     if let Some(a) = &adapter {
-        eprintln!("[quill] + adapter {} …", a.display());
+        eprintln!("[nib] + adapter {} …", a.display());
     }
     let t0 = Instant::now();
     let engine = match adapter.as_ref() {
         Some(a) => RewriteEngine::load_with_adapter(&model, Some(a))?,
         None => RewriteEngine::load(&model)?,
     };
-    eprintln!("[quill] loaded in {:.2}s", t0.elapsed().as_secs_f32());
+    eprintln!("[nib] loaded in {:.2}s", t0.elapsed().as_secs_f32());
 
     let t1 = Instant::now();
     let out = match (temperature, top_p, seed) {
@@ -97,7 +97,7 @@ fn main() -> anyhow::Result<()> {
                 LlamaSampler::dist(sd),
             ]);
             eprintln!(
-                "[quill] sampling temp={} top_p={} seed={}",
+                "[nib] sampling temp={} top_p={} seed={}",
                 temp, tp, sd
             );
             engine.rewrite_one(&text, instruction.as_deref(), sampler)?
@@ -105,22 +105,27 @@ fn main() -> anyhow::Result<()> {
     };
     let dt = t1.elapsed();
     eprintln!(
-        "[quill] rewrote in {:.2}s ({} chars in, {} chars out)",
+        "[nib] rewrote in {:.2}s ({} chars in, {} chars out)",
         dt.as_secs_f32(),
         text.len(),
-        out.len()
+        out.text.len()
     );
+    if out.truncated {
+        // stderr only — stdout stays exactly the rewrite text (the eval
+        // harness and RSFT sampler parse it verbatim).
+        eprintln!("[nib] WARNING: output truncated at the max-new-tokens cap");
+    }
 
-    println!("{out}");
+    println!("{}", out.text);
     Ok(())
 }
 
 fn print_help() {
     eprintln!(
-        "quill-rewrite — single-shot rewrite via GGUF
+        "nib-rewrite — single-shot rewrite via GGUF
 
 USAGE:
-    quill-rewrite --model PATH [--adapter PATH] --text STRING
+    nib-rewrite --model PATH [--adapter PATH] --text STRING
                   [--instruction STRING]
                   [--temperature F --top-p F --seed N]
 
@@ -139,15 +144,15 @@ ARGS:
 
 EXAMPLES:
     # Greedy (production runtime behavior):
-    quill-rewrite -m model.gguf -t \"hello world\"
+    nib-rewrite -m model.gguf -t \"hello world\"
 
     # Base + LoRA adapter (v2.1 adapter-only ship):
-    quill-rewrite -m qwen2.5-1.5b.gguf -a nib-faithful.gguf \\
+    nib-rewrite -m qwen2.5-1.5b.gguf -a nib-faithful.gguf \\
         -t \"I has a apple.\"
 
     # 8 diverse samples for RSFT (vary --seed):
     for s in 1 2 3 4 5 6 7 8; do
-        quill-rewrite -m model.gguf -t \"hello world\" \\
+        nib-rewrite -m model.gguf -t \"hello world\" \\
             --temperature 0.8 --seed \"$s\"
     done"
     );

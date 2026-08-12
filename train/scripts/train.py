@@ -1,3 +1,8 @@
+# ─── LEGACY (Gemma 3 270M / CoEdIT era) — NOT the current pipeline ───────────
+# Superseded by train/colab/train_nib_v2.ipynb (Qwen 2.5-1.5B RSFT LoRA). See
+# RSFT_BOOTSTRAP.md for the canonical recipe. Reads the legacy configs/lora.yaml.
+# Kept for reference only.
+# ─────────────────────────────────────────────────────────────────────────────
 """LoRA fine-tune Gemma 3 270M on CoEdIT via Unsloth.
 
 Run (Colab T4 free tier or any CUDA GPU):

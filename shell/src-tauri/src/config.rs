@@ -1,5 +1,5 @@
 //! Persisted Nib settings — lives at
-//! `~/Library/Application Support/Quill/config.json`.
+//! `~/Library/Application Support/Nib/config.json`.
 //!
 //! Kept tiny and serde-driven. Defaults are sane on first launch so a fresh
 //! install never sees a missing-file error. Writes are atomic (tempfile +
@@ -13,7 +13,7 @@ use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
 /// Per-app override for the engagement policy. Lets the user force-enable
-/// Quill in an app that the hardcoded policy would skip (e.g. VS Code's
+/// Nib in an app that the hardcoded policy would skip (e.g. VS Code's
 /// markdown panes) or force-disable it in an app that the policy would
 /// engage (e.g. a specific browser the user wants quiet).
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,7 +39,7 @@ pub struct Config {
     /// True after a successful auto-train; cleared once the user has
     /// relaunched (we use the absence of any prior session as the cue).
     pub pending_relaunch: bool,
-    /// Words Quill should never lint (matched case-insensitive against the
+    /// Words Nib should never lint (matched case-insensitive against the
     /// substring under a lint span). User's personal dictionary — names,
     /// jargon, slang, codenames. Lives in the config so it survives a
     /// reinstall.
@@ -58,6 +58,12 @@ pub struct Config {
     /// bundled lightweight option; users opt into larger downloads via
     /// the Settings panel.
     pub selected_model: String,
+    /// Allow personal-adapter training to fall back to the Modal cloud
+    /// backend when the local QVAC toolchain isn't available. Off by
+    /// default: the journal contains everything the user typed, and the
+    /// product promise is "your prose never leaves your Mac" unless the
+    /// user explicitly opts in.
+    pub allow_cloud_training: bool,
 }
 
 impl Default for Config {
@@ -73,6 +79,7 @@ impl Default for Config {
             pause_until: None,
             app_overrides: HashMap::new(),
             selected_model: "lfm2.5-350m".to_string(),
+            allow_cloud_training: false,
         }
     }
 }
@@ -124,7 +131,10 @@ fn now_secs() -> u64 {
 fn parse_rfc3339_secs(s: &str) -> Result<u64, ()> {
     // Y-M-D T H:M:S Z — accept either Z or +HH:MM, simple parse.
     let s = s.trim();
-    if s.len() < 19 { return Err(()); }
+    // The byte-position slicing below assumes single-byte chars; a
+    // hand-edited config with non-ASCII here must not panic the caller
+    // (the focus tracker polls is_paused_now constantly).
+    if !s.is_ascii() || s.len() < 19 { return Err(()); }
     let (date, rest) = s.split_at(10);
     if !rest.starts_with('T') { return Err(()); }
     let time = &rest[1..9];
@@ -169,6 +179,16 @@ impl ConfigStore {
         })
     }
 
+    /// Last-resort store used when the real config dir is unwritable
+    /// (e.g. HOME unset/broken). Lives in the temp dir so `update` still
+    /// has somewhere to write; settings simply won't survive relaunch.
+    pub fn ephemeral() -> Self {
+        Self {
+            path: std::env::temp_dir().join("nib-config-fallback.json"),
+            inner: Mutex::new(Config::default()),
+        }
+    }
+
     pub fn snapshot(&self) -> Config {
         self.inner.lock().map(|g| g.clone()).unwrap_or_default()
     }
@@ -201,7 +221,7 @@ fn default_path() -> std::io::Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::NotFound, "HOME not set"))?;
     let mut p = PathBuf::from(home);
-    p.push("Library/Application Support/Quill");
+    p.push("Library/Application Support/Nib");
     p.push("config.json");
     Ok(p)
 }
@@ -209,6 +229,25 @@ fn default_path() -> std::io::Result<PathBuf> {
 /// Helper: short ISO-8601 UTC timestamp for `last_train_at`.
 pub fn now_rfc3339() -> String {
     crate::journal::now_rfc3339()
+}
+
+/// One-time data-dir migration for the Quill → Nib rename. If the legacy
+/// `~/Library/Application Support/Quill` directory exists and the new `…/Nib`
+/// one does not yet, move it wholesale so the user's journal, config, models,
+/// and personal adapter all carry over. Best-effort: logs and continues on
+/// failure (the app then falls back to a fresh Nib dir). Must run once, early
+/// in `setup`, before any `…/Nib/...` path is read or created.
+pub fn migrate_legacy_data_dir() {
+    let Some(home) = std::env::var_os("HOME") else { return };
+    let base = PathBuf::from(home).join("Library/Application Support");
+    let legacy = base.join("Quill");
+    let current = base.join("Nib");
+    if legacy.is_dir() && !current.exists() {
+        match fs::rename(&legacy, &current) {
+            Ok(()) => eprintln!("[nib] migrated data dir: Quill → Nib"),
+            Err(e) => eprintln!("[nib] data-dir migration failed (using fresh Nib dir): {e}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -250,7 +289,7 @@ mod tests {
 
     #[test]
     fn round_trip_through_disk() {
-        let tmp = std::env::temp_dir().join(format!("quill-cfg-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("nib-cfg-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         let path = tmp.join("config.json");
@@ -282,7 +321,7 @@ mod tests {
     fn unknown_fields_dont_break_load() {
         // Forward compatibility: a future field should not nuke the user's
         // settings on roll-back to this version.
-        let tmp = std::env::temp_dir().join(format!("quill-cfg-fwd-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("nib-cfg-fwd-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         let path = tmp.join("config.json");

@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [master, "claude/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    name: linux (no-overlay tests + py/js/sh)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: shell/src-tauri
+      - name: Install Tauri Linux build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev cmake build-essential pkg-config libssl-dev
+      # The ~219 MB model GGUF ships at release, not in git, but Tauri's build
+      # script validates every bundle.resources path exists. Stub it so the lib
+      # compiles (no test loads the real model).
+      - name: Stub bundled model resource
+        run: touch shell/src-tauri/resources/lfm2.5-350m-q4_k_m.gguf
+      - name: Rust tests (llm; overlay is macOS-only)
+        working-directory: shell/src-tauri
+        run: cargo test --features llm --lib
+      - name: Python — AST-parse every train/ script
+        run: |
+          for f in $(find train -maxdepth 2 -name '*.py' | sort); do
+            python3 -c "import ast,sys; ast.parse(open(sys.argv[1]).read())" "$f"
+          done
+      - name: JS — node --check
+        run: |
+          node --check shell/src/main.js
+          node --check shell/src/overlay.js
+      - name: Shell — bash -n
+        run: |
+          for f in scripts/*.sh; do bash -n "$f"; done
+
+  macos-overlay:
+    name: macos (full suite incl. AXUI overlay)
+    runs-on: macos-14
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: shell/src-tauri
+      - name: Ensure cmake (for llama-cpp-2)
+        run: cmake --version || brew install cmake
+      - name: Stub bundled model resource
+        run: touch shell/src-tauri/resources/lfm2.5-350m-q4_k_m.gguf
+      - name: Rust tests (llm + overlay)
+        working-directory: shell/src-tauri
+        run: cargo test --features llm,overlay --lib

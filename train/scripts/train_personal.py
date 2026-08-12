@@ -1,3 +1,8 @@
+# ─── LEGACY / SUPERSEDED — v0.5-phase-1 skeleton, never finished ─────────────
+# Personal-adapter training now runs in-app: LOCAL QVAC (on-device, free) via
+# shell .../training_local.rs, or the Modal fallback. This standalone Gemma
+# skeleton is not runnable end-to-end. Kept for reference only.
+# ─────────────────────────────────────────────────────────────────────────────
 """Train a per-user LoRA adapter on top of the existing CoEdIT-trained model.
 
 INPUT:  ~/Library/Application Support/Quill/journal.jsonl  (exported via the
@@ -7,7 +12,7 @@ INPUT:  ~/Library/Application Support/Quill/journal.jsonl  (exported via the
 
 OUTPUT: a small GGUF LoRA adapter (~15 MB at rank 16) that Quill loads on
         top of its base model. Drops into `shell/src-tauri/resources/`
-        next to the base `quill-q4_k_m.gguf`.
+        next to the base `nib-q4_k_m.gguf`.
 
 REHEARSAL: to prevent catastrophic forgetting on a tiny personal dataset,
 we mix 50% personal pairs with 50% random CoEdIT pairs each step.
@@ -36,7 +41,7 @@ def main() -> None:
     ap.add_argument("--epochs", type=int, default=3)
     ap.add_argument("--lr", type=float, default=5e-5,
                     help="Lower than CoEdIT's 1e-4 — fewer steps, smaller deltas")
-    ap.add_argument("--out", default="checkpoints/quill-personal-q4_k_m.gguf")
+    ap.add_argument("--out", default="checkpoints/nib-personal-q4_k_m.gguf")
     args = ap.parse_args()
 
     j = Path(args.journal)
@@ -66,7 +71,7 @@ def main() -> None:
     # 4. Merge new adapter, run llama.cpp convert + quantize → args.out
     # 5. Drop result into ~/quill/shell/src-tauri/resources/ and notify Quill
 
-    print(f"[quill.train_personal] phase 1 done — phase 2 (actual training) is the next session")
+    print("[quill.train_personal] phase 1 done — phase 2 (actual training) is the next session")
     print(f"[quill.train_personal] would produce {args.out}")
 
 

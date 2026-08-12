@@ -12,20 +12,21 @@
 //!      clipboard helper. The selection was already moved in step 1, so
 //!      the paste replaces the right characters.
 //!
-//! When the fallback fires, we log `[quill][apply] fallback=clipboard`
-//! so per-app behaviour is observable in `/tmp/quill.log`.
+//! When the fallback fires, we log `[nib][apply] fallback=clipboard`
+//! so per-app behaviour is observable in the app log
+//! (`~/Library/Logs/nib.log` when launched via install-dev.sh).
 
 #![cfg(all(target_os = "macos", feature = "overlay"))]
 
 use std::os::raw::c_void;
 
 use accessibility_sys::{
-    AXUIElementCopyAttributeValue, AXUIElementCreateSystemWide, AXUIElementRef,
-    AXUIElementSetAttributeValue, AXValueCreate, kAXErrorSuccess,
+    AXUIElementCopyAttributeValue, AXUIElementCreateSystemWide, AXUIElementGetPid,
+    AXUIElementRef, AXUIElementSetAttributeValue, AXValueCreate, kAXErrorSuccess,
     kAXFocusedApplicationAttribute, kAXFocusedUIElementAttribute, kAXSelectedTextAttribute,
-    kAXSelectedTextRangeAttribute, kAXValueTypeCFRange,
+    kAXSelectedTextRangeAttribute, kAXValueAttribute, kAXValueTypeCFRange,
 };
-use core_foundation::base::{CFIndex, CFRange, CFRelease, CFTypeRef, TCFType};
+use core_foundation::base::{CFIndex, CFRange, CFRelease, CFType, CFTypeRef, TCFType};
 use core_foundation::string::CFString;
 
 use crate::overlay::clipboard;
@@ -64,7 +65,7 @@ pub enum ApplyStrategy {
 pub fn apply(start: u32, end: u32, replacement: &str) -> Result<(), ApplyError> {
     let strategy = apply_with_strategy(start, end, replacement)?;
     eprintln!(
-        "[quill][apply] strategy={strategy:?} start={start} end={end} len={}",
+        "[nib][apply] strategy={strategy:?} start={start} end={end} len={}",
         replacement.chars().count()
     );
     Ok(())
@@ -75,32 +76,54 @@ pub fn apply_with_strategy(
     end: u32,
     replacement: &str,
 ) -> Result<ApplyStrategy, ApplyError> {
-    let length = end.saturating_sub(start);
-
     // Prefer the cached engaged element from focus_tracker. Clicking our
-    // overlay popover activates Quill's app and shifts live AXUI focus
+    // overlay popover activates Nib's app and shifts live AXUI focus
     // away from the user's writing app — re-querying here would write to
     // our own WKWebView. The cache holds the last text-field the focus
     // tracker engaged on, which is the right target.
     let elem = if let Some(saved) = crate::overlay::engaged_elem::current_handle() {
-        eprintln!("[quill][apply] using saved engaged elem");
+        eprintln!("[nib][apply] using saved engaged elem");
         saved as AXUIElementRef
     } else {
-        eprintln!("[quill][apply] no saved elem — falling back to live AXUI query");
+        eprintln!("[nib][apply] no saved elem — falling back to live AXUI query");
         let system_wide = unsafe { AXUIElementCreateSystemWide() };
-        let app = copy_attr_ref(system_wide, kAXFocusedApplicationAttribute)
-            .ok_or(ApplyError::NoFocusedApp)?;
-        let elem = copy_attr_ref(app as AXUIElementRef, kAXFocusedUIElementAttribute);
-        unsafe { CFRelease(app) };
-        elem.ok_or(ApplyError::NoFocusedElement)? as AXUIElementRef
+        let app = copy_attr_ref(system_wide, kAXFocusedApplicationAttribute);
+        let elem = app.and_then(|app| {
+            let e = copy_attr_ref(app as AXUIElementRef, kAXFocusedUIElementAttribute);
+            unsafe { CFRelease(app) };
+            e
+        });
+        unsafe { CFRelease(system_wide as CFTypeRef) };
+        match elem {
+            Some(e) => e as AXUIElementRef,
+            None => return Err(ApplyError::NoFocusedElement),
+        }
+    };
+
+    // The target app's pid — the clipboard fallback posts ⌘V directly to
+    // it. After a popover click Nib itself is frontmost, so an HID-tap
+    // paste would land in our own webview instead of the user's field.
+    let target_pid = {
+        let mut pid: i32 = 0;
+        let err = unsafe { AXUIElementGetPid(elem, &mut pid) };
+        (err == kAXErrorSuccess && pid > 0).then_some(pid)
+    };
+
+    // Harper lints (and the overlay JS) speak Unicode *char* offsets, but
+    // AX CFRanges are UTF-16 code units. Convert against the field's
+    // current text; with any non-BMP char (emoji) before the span, raw
+    // char offsets would select — and replace — the wrong characters.
+    let (ax_start, ax_length) = match copy_elem_text(elem) {
+        Some(text) => char_range_to_utf16(&text, start as usize, end as usize),
+        None => (start as CFIndex, end.saturating_sub(start) as CFIndex),
     };
 
     // Step 1 — move the selection. We try this even before deciding which
     // text-write path to take, because the clipboard fallback needs the
     // selection already on the target span for ⌘V to replace it.
     let range = CFRange {
-        location: start as CFIndex,
-        length: length as CFIndex,
+        location: ax_start,
+        length: ax_length,
     };
     let range_val = unsafe {
         AXValueCreate(
@@ -108,15 +131,17 @@ pub fn apply_with_strategy(
             &range as *const _ as *const c_void,
         )
     };
-    let range_attr = CFString::new(kAXSelectedTextRangeAttribute);
-    let _range_err = unsafe {
-        AXUIElementSetAttributeValue(
-            elem,
-            range_attr.as_concrete_TypeRef(),
-            range_val as CFTypeRef,
-        )
-    };
-    unsafe { CFRelease(range_val as CFTypeRef) };
+    if !range_val.is_null() {
+        let range_attr = CFString::new(kAXSelectedTextRangeAttribute);
+        let _range_err = unsafe {
+            AXUIElementSetAttributeValue(
+                elem,
+                range_attr.as_concrete_TypeRef(),
+                range_val as CFTypeRef,
+            )
+        };
+        unsafe { CFRelease(range_val as CFTypeRef) };
+    }
     // We don't bail on range-set failure — even if AXUI rejects it, the
     // user's existing selection (or caret) is probably already at the
     // word they hovered. The clipboard fallback then pastes there.
@@ -136,8 +161,8 @@ pub fn apply_with_strategy(
         return Ok(ApplyStrategy::AxuiText);
     }
 
-    // Step 3 — clipboard fallback.
-    let posted = clipboard::paste_via_clipboard(replacement);
+    // Step 3 — clipboard fallback, posted to the target app's pid.
+    let posted = clipboard::paste_via_clipboard_to(replacement, target_pid);
     if posted {
         Ok(ApplyStrategy::Clipboard)
     } else {
@@ -146,6 +171,30 @@ pub fn apply_with_strategy(
             clipboard_posted: false,
         })
     }
+}
+
+/// Read the element's full text (kAXValueAttribute) as a Rust String.
+fn copy_elem_text(elem: AXUIElementRef) -> Option<String> {
+    let raw = copy_attr_ref(elem, kAXValueAttribute)?;
+    let cf_any = unsafe { CFType::wrap_under_create_rule(raw) };
+    cf_any.downcast::<CFString>().map(|s| s.to_string())
+}
+
+/// Convert a [start, end) *char* range into a UTF-16 (location, length)
+/// pair for AX CFRanges. Clamps to the text's length.
+fn char_range_to_utf16(text: &str, start: usize, end: usize) -> (CFIndex, CFIndex) {
+    let mut u16_start: usize = 0;
+    let mut u16_len: usize = 0;
+    for (i, c) in text.chars().enumerate() {
+        if i < start {
+            u16_start += c.len_utf16();
+        } else if i < end {
+            u16_len += c.len_utf16();
+        } else {
+            break;
+        }
+    }
+    (u16_start as CFIndex, u16_len as CFIndex)
 }
 
 fn copy_attr_ref(element: AXUIElementRef, attr_name: &str) -> Option<CFTypeRef> {
@@ -175,6 +224,25 @@ mod tests {
         let _all: [ApplyStrategy; 2] = [ApplyStrategy::AxuiText, ApplyStrategy::Clipboard];
     }
 
+    /// Emoji before the span shift UTF-16 offsets past the char offsets;
+    /// CJK/BMP chars don't. Both must map correctly or apply replaces the
+    /// wrong characters.
+    #[test]
+    fn char_range_to_utf16_handles_non_bmp() {
+        // "🎉🎉 hi" — chars: [🎉,🎉,' ','h','i'], utf16: [2,2,1,1,1]
+        let (loc, len) = char_range_to_utf16("🎉🎉 hi", 3, 5);
+        assert_eq!((loc, len), (5, 2));
+        // Pure ASCII: identity.
+        let (loc, len) = char_range_to_utf16("hello", 1, 3);
+        assert_eq!((loc, len), (1, 2));
+        // BMP CJK: 1 utf16 unit per char — identity too.
+        let (loc, len) = char_range_to_utf16("你好 hi", 3, 5);
+        assert_eq!((loc, len), (3, 2));
+        // Clamped when the range runs past the text.
+        let (loc, len) = char_range_to_utf16("ab", 1, 9);
+        assert_eq!((loc, len), (1, 1));
+    }
+
     #[test]
     fn apply_error_messages_mention_codes() {
         let e = ApplyError::AllStrategiesFailed { axui_err: -25212, clipboard_posted: false };
@@ -183,15 +251,15 @@ mod tests {
         assert!(s.contains("clipboard"));
     }
 
-    /// Integration test (gated): actually focuses Quill's own window and
+    /// Integration test (gated): actually focuses Nib's own window and
     /// runs apply_with_strategy to verify the AXUI path returns
-    /// `Strategy::AxuiText` on WKWebView. Only enabled if QUILL_TEST_AXUI=1
+    /// `Strategy::AxuiText` on WKWebView. Only enabled if NIB_TEST_AXUI=1
     /// so CI without an active session doesn't pop random apply events.
     #[test]
     #[ignore]
     fn axui_path_returns_axui_text_when_native_focused() {
-        if std::env::var("QUILL_TEST_AXUI").ok().as_deref() != Some("1") {
-            eprintln!("set QUILL_TEST_AXUI=1 with a Cocoa text field focused");
+        if std::env::var("NIB_TEST_AXUI").ok().as_deref() != Some("1") {
+            eprintln!("set NIB_TEST_AXUI=1 with a Cocoa text field focused");
             return;
         }
         let r = apply_with_strategy(0, 0, " ");

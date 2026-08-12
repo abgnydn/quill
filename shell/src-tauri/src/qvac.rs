@@ -1,10 +1,10 @@
 //! Locator + thin wrapper for the bundled QVAC Fabric binaries.
 //!
 //! `scripts/install-dev.sh` builds `qvac-fabric-llm.cpp` (Tether's BitNet
-//! + on-device LoRA fork of `llama.cpp`) and stages
-//!   llama-cli, llama-finetune-lora, *.dylib, *.metallib
-//! into `shell/src-tauri/resources/qvac/`. Tauri's bundler ships those
-//! into `Quill.app/Contents/Resources/_up_/resources/qvac/` (the
+//! plus on-device LoRA fork of `llama.cpp`) and stages `llama-cli`,
+//! `llama-finetune-lora`, `*.dylib`, and `*.metallib` into
+//! `shell/src-tauri/resources/qvac/`. Tauri's bundler ships those into
+//! `Nib.app/Contents/Resources/_up_/resources/qvac/` (the
 //! resource-directory layout Tauri uses for `resources` glob entries).
 //!
 //! This module finds them at runtime via Tauri's resource resolver +
@@ -17,7 +17,7 @@ use tauri::path::BaseDirectory;
 use tauri::Manager;
 
 /// Locate the bundled QVAC binary by name (e.g. `"llama-cli"`).
-/// Returns `None` if Quill was built without QVAC staged.
+/// Returns `None` if Nib was built without QVAC staged.
 pub fn binary_path(app: &tauri::AppHandle, name: &str) -> Option<PathBuf> {
     app.path()
         .resolve(
@@ -30,18 +30,27 @@ pub fn binary_path(app: &tauri::AppHandle, name: &str) -> Option<PathBuf> {
 
 /// Returns the QVAC build version string (`llama-cli --version` first line)
 /// when the binary is bundled + runnable, else None.
+///
+/// Cached after the first call: the bundled binary can't change mid-run,
+/// and `capabilities` is polled from the UI — exec'ing a subprocess on
+/// every poll (on whatever thread the command runs on) is wasted work.
 pub fn version(app: &tauri::AppHandle) -> Option<String> {
-    let bin = binary_path(app, "llama-cli")?;
-    let out = Command::new(&bin)
-        .arg("--version")
-        .output()
-        .ok()?;
-    // llama.cpp `--version` writes to stderr; check both streams.
-    let first_line = |bytes: &[u8]| -> Option<String> {
-        let s = String::from_utf8_lossy(bytes).into_owned();
-        s.lines().next().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
-    };
-    first_line(&out.stderr).or_else(|| first_line(&out.stdout))
+    static CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            let bin = binary_path(app, "llama-cli")?;
+            let out = Command::new(&bin)
+                .arg("--version")
+                .output()
+                .ok()?;
+            // llama.cpp `--version` writes to stderr; check both streams.
+            let first_line = |bytes: &[u8]| -> Option<String> {
+                let s = String::from_utf8_lossy(bytes).into_owned();
+                s.lines().next().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+            };
+            first_line(&out.stderr).or_else(|| first_line(&out.stdout))
+        })
+        .clone()
 }
 
 /// Cheap presence check — does the bundle actually have what we'd need

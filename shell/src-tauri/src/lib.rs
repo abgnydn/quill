@@ -1,11 +1,11 @@
-//! Quill — local-first grammar/writing assistant.
+//! Nib — local-first grammar/writing assistant.
 //!
 //! - `wire.rs`        — types crossing the Tauri IPC boundary
 //! - `state.rs`       — `CheckerState`, `RewriteState` managed by Tauri
 //! - `commands.rs`    — `#[tauri::command]` thunks (one-line delegations)
 //! - `inference.rs`   — llama-cpp-2 wrapper (feature = "llm")
 //! - `overlay/`       — macOS focus tracker, click-through window,
-//!                      mouse arbiter, AXUI write-back (feature = "overlay")
+//!   mouse arbiter, AXUI write-back (feature = "overlay")
 
 use tauri::Manager;
 
@@ -44,12 +44,12 @@ fn run_rewrite_selection(app: tauri::AppHandle) {
     let selection = match overlay::clipboard::read_selection_via_copy() {
         Some(s) => s,
         None => {
-            eprintln!("[quill][hotkey] no selection to rewrite");
+            eprintln!("[nib][hotkey] no selection to rewrite");
             return;
         }
     };
     eprintln!(
-        "[quill][hotkey] selection={} chars; calling rewrite…",
+        "[nib][hotkey] selection={} chars; calling rewrite…",
         selection.chars().count()
     );
 
@@ -58,7 +58,7 @@ fn run_rewrite_selection(app: tauri::AppHandle) {
         let lock = match state.engine.lock() {
             Ok(g) => g,
             Err(_) => {
-                eprintln!("[quill][hotkey] engine mutex poisoned");
+                eprintln!("[nib][hotkey] engine mutex poisoned");
                 return;
             }
         };
@@ -66,26 +66,35 @@ fn run_rewrite_selection(app: tauri::AppHandle) {
             Some(engine) => match engine.rewrite(&selection, None) {
                 Ok(s) => s,
                 Err(e) => {
-                    eprintln!("[quill][hotkey] rewrite failed: {e:#}");
+                    eprintln!("[nib][hotkey] rewrite failed: {e:#}");
                     return;
                 }
             },
             None => {
-                eprintln!("[quill][hotkey] no model loaded");
+                eprintln!("[nib][hotkey] no model loaded");
                 return;
             }
         }
     };
-    let posted = overlay::clipboard::paste_via_clipboard(&result);
+    if result.truncated {
+        // Never silently replace the user's selection with a rewrite that
+        // was cut off at the token cap — losing the tail of their text is
+        // strictly worse than doing nothing.
+        eprintln!(
+            "[nib][hotkey] rewrite hit the max-token cap (selection too long) — not pasting"
+        );
+        return;
+    }
+    let posted = overlay::clipboard::paste_via_clipboard(&result.text);
     eprintln!(
-        "[quill][hotkey] rewrite paste posted={posted} result={} chars",
-        result.chars().count()
+        "[nib][hotkey] rewrite paste posted={posted} result={} chars",
+        result.text.chars().count()
     );
 }
 
 #[cfg(not(all(target_os = "macos", feature = "overlay", feature = "llm")))]
 fn run_rewrite_selection(_app: tauri::AppHandle) {
-    eprintln!("[quill][hotkey] requires both 'overlay' and 'llm' features");
+    eprintln!("[nib][hotkey] requires both 'overlay' and 'llm' features");
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -106,7 +115,7 @@ pub fn run() {
                         if shortcut != &trigger {
                             return;
                         }
-                        eprintln!("[quill][hotkey] ⌘⇧R triggered");
+                        eprintln!("[nib][hotkey] ⌘⇧R triggered");
                         let app_handle = app.clone();
                         std::thread::spawn(move || {
                             run_rewrite_selection(app_handle);
@@ -116,28 +125,28 @@ pub fn run() {
                 .build(),
         )
         .setup(move |app| {
+            // One-time Quill → Nib data-dir migration. Must run before any
+            // `…/Nib/...` path is read or created below (config, journal, models).
+            config::migrate_legacy_data_dir();
+
             app.global_shortcut()
                 .register(rewrite_shortcut)
-                .unwrap_or_else(|e| eprintln!("[quill] could not register ⌘⇧R: {e}"));
+                .unwrap_or_else(|e| eprintln!("[nib] could not register ⌘⇧R: {e}"));
 
-            // Config: load (or create) ~/Library/Application Support/Quill/config.json
+            // Config: load (or create) ~/Library/Application Support/Nib/config.json
             // (loaded before the tray so the Pause/Resume menu item can reflect
             // the persisted `paused` state at startup.)
             let config = match config::ConfigStore::open_default() {
                 Ok(c) => {
-                    eprintln!("[quill] config at {}", c.path().display());
+                    eprintln!("[nib] config at {}", c.path().display());
                     std::sync::Arc::new(c)
                 }
                 Err(e) => {
-                    eprintln!("[quill] config open failed: {e} (using defaults in memory)");
-                    std::sync::Arc::new(
-                        config::ConfigStore::open_default()
-                            .unwrap_or_else(|_| {
-                                // Last-resort: in-memory only. open_default writes
-                                // through, so two failures imply HOME is unwritable.
-                                unreachable!("config fallback unreachable in practice")
-                            }),
-                    )
+                    // App-support dir unwritable (broken HOME, sandbox
+                    // mishap). Run with defaults backed by a temp file —
+                    // settings won't persist, but nothing panics.
+                    eprintln!("[nib] config open failed: {e} — using ephemeral defaults");
+                    std::sync::Arc::new(config::ConfigStore::ephemeral())
                 }
             };
             app.manage(config.clone());
@@ -147,7 +156,7 @@ pub fn run() {
             app.manage(std::sync::Arc::new(models::DownloadTracker::new()));
 
             // ---- Menubar tray ------------------------------------------
-            // Quill runs as an LSUIElement — no dock icon, no main app
+            // Nib runs as an LSUIElement — no dock icon, no main app
             // menu. The tray icon is the only persistent surface.
             {
                 use tauri::menu::{Menu, MenuItem};
@@ -216,7 +225,7 @@ pub fn run() {
                             {
                                 Ok(c) => c.paused,
                                 Err(e) => {
-                                    eprintln!("[quill][tray] pause toggle failed: {e}");
+                                    eprintln!("[nib][tray] pause toggle failed: {e}");
                                     return;
                                 }
                             };
@@ -226,7 +235,7 @@ pub fn run() {
                                         let _ = tray.set_menu(Some(m));
                                     }
                                     Err(e) => eprintln!(
-                                        "[quill][tray] menu rebuild failed: {e}"
+                                        "[nib][tray] menu rebuild failed: {e}"
                                     ),
                                 }
                             }
@@ -242,9 +251,9 @@ pub fn run() {
                                 c.paused = false;
                                 c.pause_until = Some(until.clone());
                             }) {
-                                eprintln!("[quill][tray] pause-for-minutes failed: {e}");
+                                eprintln!("[nib][tray] pause-for-minutes failed: {e}");
                             } else {
-                                eprintln!("[quill][tray] paused for {minutes} min (until {until})");
+                                eprintln!("[nib][tray] paused for {minutes} min (until {until})");
                             }
                         }
                         "open-settings" => {
@@ -261,8 +270,12 @@ pub fn run() {
                             }
                         }
                         "train" => {
-                            // Forward to the existing train command (no UI yet,
-                            // results land in /tmp/quill.log).
+                            // Same path as the train_personal_start command
+                            // (local QVAC preferred, Modal only behind the
+                            // explicit opt-in). The tray used to call the
+                            // legacy Modal backend directly and swallow the
+                            // error. Results land in the app log
+                            // (~/Library/Logs/nib.log via install-dev.sh).
                             let app_handle = app.clone();
                             std::thread::spawn(move || {
                                 use tauri::Manager;
@@ -270,20 +283,30 @@ pub fn run() {
                                     app_handle.state();
                                 let training: tauri::State<'_, crate::training::SharedTraining> =
                                     app_handle.state();
-                                match journal.export_training_pairs(
-                                    &std::env::temp_dir().join("quill-tray-train.jsonl"),
+                                let backend: tauri::State<'_, std::sync::Arc<crate::qvac::BackendConfig>> =
+                                    app_handle.state();
+                                let config: tauri::State<'_, std::sync::Arc<crate::config::ConfigStore>> =
+                                    app_handle.state();
+                                match commands::start_personal_training(
+                                    &journal, &training, &backend, &config,
                                 ) {
-                                    Ok(n) if n >= 10 => {
-                                        let _ = training.start(
-                                            std::env::temp_dir().join("quill-tray-train.jsonl"),
-                                        );
-                                    }
-                                    Ok(n) => eprintln!("[quill][tray] only {n} pairs; need ≥10"),
-                                    Err(e) => eprintln!("[quill][tray] export failed: {e}"),
+                                    Ok(st) => eprintln!(
+                                        "[nib][tray] training started (backend {:?})",
+                                        st.backend
+                                    ),
+                                    Err(e) => eprintln!("[nib][tray] training not started: {e}"),
                                 }
                             });
                         }
-                        "quit" => app.exit(0),
+                        "quit" => {
+                            // Reap the in-flight model download, if any —
+                            // an orphaned curl would keep writing into the
+                            // models dir after we're gone.
+                            if let Some(t) = app.try_state::<std::sync::Arc<models::DownloadTracker>>() {
+                                t.kill_running();
+                            }
+                            app.exit(0)
+                        }
                         _ => {}
                     })
                     .build(app)?;
@@ -317,13 +340,26 @@ pub fn run() {
             };
             app.manage(rewrite_state);
 
-            match journal::Journal::open_default() {
-                Ok(j) => {
-                    eprintln!("[quill] journal at {}", j.path().display());
-                    app.manage(std::sync::Arc::new(j));
-                }
-                Err(e) => eprintln!("[quill] journal open failed: {e}"),
-            }
+            // The journal must ALWAYS be managed — every journal-taking
+            // command and the tray train handler would panic on an
+            // unmanaged State. Degrade: app dir → temp dir → /dev/null
+            // (appends become no-ops; append() already swallows errors).
+            let journal_arc = std::sync::Arc::new(
+                journal::Journal::open_default()
+                    .inspect(|j| eprintln!("[nib] journal at {}", j.path().display()))
+                    .or_else(|e| {
+                        eprintln!("[nib] journal open failed: {e} — falling back to temp dir");
+                        journal::Journal::open_at(
+                            std::env::temp_dir().join("nib-journal-fallback.jsonl"),
+                        )
+                    })
+                    .unwrap_or_else(|e| {
+                        eprintln!("[nib] temp journal failed too: {e} — journaling disabled");
+                        journal::Journal::open_at(std::path::PathBuf::from("/dev/null"))
+                            .expect("/dev/null must open")
+                    }),
+            );
+            app.manage(journal_arc.clone());
 
             let training = std::sync::Arc::new(training::TrainingState::default());
             app.manage(training.clone());
@@ -332,7 +368,7 @@ pub fn run() {
             // so the background scheduler doesn't have to re-resolve them.
             let backend_config = std::sync::Arc::new(qvac::BackendConfig::resolve(app));
             eprintln!(
-                "[quill] backend config: local_ready={} finetune_bin={:?} base_model={:?}",
+                "[nib] backend config: local_ready={} finetune_bin={:?} base_model={:?}",
                 backend_config.local_ready(),
                 backend_config.finetune_bin,
                 backend_config.base_model,
@@ -342,27 +378,17 @@ pub fn run() {
             // Background scheduler — only when LLM feature is on (no
             // training infrastructure otherwise).
             #[cfg(feature = "llm")]
-            {
-                let journal_arc: std::sync::Arc<journal::Journal> = match app.try_state::<std::sync::Arc<journal::Journal>>() {
-                    Some(s) => s.inner().clone(),
-                    None => {
-                        // journal failed to open earlier; skip scheduler.
-                        eprintln!("[quill] scheduler: no journal state, skipping auto-retrain");
-                        std::sync::Arc::new(journal::Journal::open_default().unwrap_or_else(|_| unreachable!()))
-                    }
-                };
-                training_scheduler::spawn(
-                    journal_arc,
-                    training.clone(),
-                    config.clone(),
-                    backend_config.clone(),
-                );
-            }
+            training_scheduler::spawn(
+                journal_arc.clone(),
+                training.clone(),
+                config.clone(),
+                backend_config.clone(),
+            );
 
             #[cfg(all(target_os = "macos", feature = "overlay"))]
             {
-                if let Err(e) = overlay::window::create(&app.handle()) {
-                    eprintln!("[quill] failed to create overlay window: {e}");
+                if let Err(e) = overlay::window::create(app.handle()) {
+                    eprintln!("[nib] failed to create overlay window: {e}");
                 }
                 let hot = std::sync::Arc::new(overlay::mouse_arbiter::HotRegions::default());
                 app.manage(hot.clone());

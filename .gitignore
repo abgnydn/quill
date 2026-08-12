@@ -3,16 +3,12 @@ target/
 **/target/
 # Cargo.lock is committed — this is a binary app, not a library.
 
-# Node
-node_modules/
-dist/
-.parcel-cache/
-
 # Python
 .venv/
 __pycache__/
 *.pyc
 .uv-cache/
+.ruff_cache/
 
 # Models / datasets / artifacts
 train/data/cache/

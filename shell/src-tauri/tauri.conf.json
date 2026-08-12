@@ -20,7 +20,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
     },
     "withGlobalTauri": true,
     "macOSPrivateApi": true
@@ -43,7 +43,7 @@
     ],
     "category": "Productivity",
     "shortDescription": "Nib — local-first grammar assistant",
-    "longDescription": "Nib is a local-first grammar and writing assistant for macOS. Combines a fast Harper rule engine with the LiquidAI LFM2.5-350M LLM, both running entirely on-device. Zero network calls; your prose never leaves your Mac.",
+    "longDescription": "Nib is a local-first grammar and writing assistant for macOS. Combines a fast Harper rule engine with the LiquidAI LFM2.5-350M LLM, both running entirely on-device. Checking and rewrites make zero network calls; the network is used only for optional model downloads and strictly opt-in cloud training.",
     "macOS": {
       "minimumSystemVersion": "13.0",
       "frameworks": [],
